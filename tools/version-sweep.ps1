@@ -1,4 +1,4 @@
-# Game-version regression guard. Runs the full compat matrix against every supported
+﻿# Game-version regression guard. Runs the full compat matrix against every supported
 # Vintage Story version, so a release can't claim 1.22.0+ support it never tested.
 #
 # modinfo.json declares `"dependencies": { "game": "1.22.0" }` — that is a promise, and this
@@ -98,7 +98,12 @@ foreach ($ver in $Versions) {
     try {
         $exe = Get-ServerPackage $ver
         & "$PSScriptRoot\compat-test.ps1" -SkipBuild:$built -ServerExe $exe
-        $status = if ($LASTEXITCODE -eq 0) { "PASS" } else { "FAIL" }
+        # compat-test.ps1 exits 2 for BLOCKED (a machine problem: another Vintage Story server
+        # holding the port, a singleplayer world included). That is "this version was not
+        # tested", NOT "the mod is broken on this version" — exactly the distinction the SETUP
+        # branch below already makes, and collapsing it into FAIL sends you hunting a bug that
+        # does not exist. It cost a release run once; hence the explicit code.
+        $status = switch ($LASTEXITCODE) { 0 { "PASS" } 2 { "BLOCKED" } default { "FAIL" } }
         $built = $true
     } catch {
         Write-Host "  $_" -ForegroundColor Red
@@ -108,7 +113,7 @@ foreach ($ver in $Versions) {
     $ok = ($status -eq "PASS")
     if (-not $ok -and -not $KeepGoing) {
         Write-Host ""
-        Write-Host "VERSION SWEEP ABORTED at $ver (use -KeepGoing to test the rest anyway)" -ForegroundColor Red
+        Write-Host "VERSION SWEEP ABORTED at $ver ($status; use -KeepGoing to test the rest anyway)" -ForegroundColor Red
         exit 1
     }
 }
@@ -119,16 +124,22 @@ $results.GetEnumerator() | ForEach-Object {
     $color = switch ($_.Value) { "PASS" { "Green" } "FAIL" { "Red" } default { "Yellow" } }
     Write-Host ("  {0,-8} {1}" -f $_.Key, $_.Value) -ForegroundColor $color
 }
-$broken = @($results.GetEnumerator() | Where-Object { $_.Value -eq "FAIL" })
-$unrun  = @($results.GetEnumerator() | Where-Object { $_.Value -eq "SETUP" })
+$broken  = @($results.GetEnumerator() | Where-Object { $_.Value -eq "FAIL" })
+$unrun   = @($results.GetEnumerator() | Where-Object { $_.Value -eq "SETUP" })
+$blocked = @($results.GetEnumerator() | Where-Object { $_.Value -eq "BLOCKED" })
 if ($unrun.Count -gt 0) {
     Write-Host "NOT TESTED (server package setup failed): $($unrun.Key -join ', ')" -ForegroundColor Yellow
+}
+if ($blocked.Count -gt 0) {
+    Write-Host "NOT TESTED (environment, not the mod — a Vintage Story server held the port): $($blocked.Key -join ', ')" -ForegroundColor Yellow
+    Write-Host "  Close any running game or server and re-run just those versions:" -ForegroundColor Yellow
+    Write-Host "  .\tools\version-sweep.ps1 -SkipBuild -Versions $($blocked.Key -join ',')" -ForegroundColor Yellow
 }
 if ($broken.Count -gt 0) {
     Write-Host "VERSION SWEEP FAILED: $($broken.Key -join ', ')" -ForegroundColor Red
     exit 1
 }
-if ($unrun.Count -gt 0) {
+if ($unrun.Count -gt 0 -or $blocked.Count -gt 0) {
     Write-Host "VERSION SWEEP INCOMPLETE: no version failed, but some were never tested" -ForegroundColor Yellow
     exit 1
 }

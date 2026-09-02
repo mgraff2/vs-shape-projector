@@ -93,6 +93,13 @@ Derived from this mod's real interaction surface, not another project's list:
 - **`exit 0` at the end of compat-test.ps1 is load-bearing.** The sweep reads
   `$LASTEXITCODE`, which only native commands and `exit` set; without it a `-SkipBuild` run
   leaves a stale code and a fully passing matrix reports as all-FAIL.
+- **BLOCKED must survive the trip up to the sweep.** `compat-test.ps1` exits 2 for BLOCKED, but
+  `version-sweep.ps1` originally collapsed every non-zero code into FAIL — so a port race on one
+  version reported "VERSION SWEEP FAILED: 1.22.7" for a version the mod was never actually tested
+  on. Caught during the 1.0.0 release run (2026-09-02); the re-run passed. The sweep now maps
+  exit 2 to BLOCKED and reports it with SETUP as "not tested", never as a mod failure. The
+  general rule: an exit code that distinguishes two outcomes is worthless if the caller throws
+  the distinction away.
 - **SETUP is not FAIL.** "This version could not be tested" (half-extracted server package
   flooding the log with unrelated `[Error]`s) and "the mod is broken" call for different next
   actions. Same for BLOCKED (exit 2): another server on the port — a singleplayer world
