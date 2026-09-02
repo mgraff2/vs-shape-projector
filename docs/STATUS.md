@@ -1,4 +1,20 @@
-# Project status — session handoff (2026-09-01)
+# Project status — session handoff (2026-09-02)
+
+## Release 1.0.0 — prepared, NOT published
+
+modinfo bumped 0.1.0 -> 1.0.0 with a real description (it still said "Step-1 prototype").
+CHANGELOG.md, README.md, LICENSE (MIT, matching the sibling vs-* repos) written. Git repo
+initialised, everything committed on `main`, remote `mgraff2/vs-shape-projector` (public).
+Gate 1 (compat matrix) green all session; gate 2 (version sweep, 1.22.0-1.22.7) run against
+the actual 1.0.0 zip.
+
+**The blocker is acceptance, not engineering.** acceptance-log.md still records step 1 alone.
+Steps 3-7 and every v2 feature have never had a formal pass, and the whole of 2026-09-02 —
+tooltips, the hologram switch, per-layer thickness and height, the cell budget, maxRadius 256
+and the new 4-connected circle rasterization — has not been seen in game at all. The §11 gates
+cannot see the client half by construction. Do not publish to the ModDB until Gubsy's pass is
+logged here.
+
 
 ## Where things stand
 
