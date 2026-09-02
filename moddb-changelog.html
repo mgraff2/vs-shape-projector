@@ -1,0 +1,61 @@
+<!-- Paste into the "changelog" field of the ModDB release. Newest version first;
+     keep older entries so the page reads as a history. -->
+
+<p style="font-size: 1.1em;"><strong>1.0.0 &mdash; first release.</strong> A block that casts building guides onto the world: seven figures, up to forty-eight layers around one shared centre, each able to lie dead level or drape over the terrain and follow the floor down as you dig. It places nothing and breaks nothing &mdash; it only shows you where.</p>
+<table class="stdtable" style="width: 100%;">
+<tbody>
+<tr>
+<td style="width: 26%;"><strong>Seven figures</strong></td>
+<td>Circle, ring, ellipse, rectangle, regular polygon, triangle and spiral, each measured exactly. A ring draws both of its circles and leaves the band between them empty &mdash; that band is the moat you dig.</td>
+</tr>
+<tr>
+<td><strong>Layers on one centre</strong></td>
+<td>Up to forty-eight figures at once, concentric by construction, each with its own size, colour, height offset and switch. The centre moves in half-block steps &mdash; on a block for an odd diameter, on the seam for an even one &mdash; and may sit well away from the projector, so the instrument stands beside the work.</td>
+</tr>
+<tr>
+<td><strong>Thickness</strong></td>
+<td>Mark a figure several blocks broad in one layer instead of several layers set one apart. The band grows inward, so the outer edge stays exactly where the radius puts it.</td>
+</tr>
+<tr>
+<td><strong>Height</strong></td>
+<td>Stand a figure several blocks tall in one layer, so a thirty-block round tower is one layer rather than thirty. Over a slope in Follow terrain it keeps its height, measuring from each column&#39;s own ground.</td>
+</tr>
+<tr>
+<td><strong>Follow terrain</strong></td>
+<td>The outline lies on the surface like a rope laid out by hand and follows the floor down as you excavate, so a dig line is never lost halfway through the digging. Water is yours to rule per layer: rest on the surface and mark the bank, or look through to the bed and mark the bottom.</td>
+</tr>
+<tr>
+<td><strong>Fixed height</strong></td>
+<td>One dead-level line whatever the ground does &mdash; wall tops, floors, platforms. Where the earth swallows it, cut down; where it hangs in air, fill up.</td>
+</tr>
+<tr>
+<td><strong>Marks turn green</strong></td>
+<td>Fill a marked block and its guide goes green, so the figure completes in front of you and what is left is obvious.</td>
+</tr>
+<tr>
+<td><strong>A holographic miniature</strong></td>
+<td>The whole design in miniature above the block, so a many-layered plan can be read without walking it. Switchable on its own without stopping the projection.</td>
+</tr>
+<tr>
+<td><strong>Named presets</strong></td>
+<td>Saved per player rather than per projector, so a shape worked out once follows you to every projector you own. Load one in place of what is there, or add it on top.</td>
+</tr>
+<tr>
+<td><strong>Shortcuts</strong></td>
+<td><strong>Page Up</strong> copies the selected layer a course higher, <strong>Page Down</strong> copies it a block outward, and <strong>+</strong> / <strong>&minus;</strong> resize every layer at once &mdash; with clamps reported rather than silently applied.</td>
+</tr>
+<tr>
+<td><strong>Tooltips that do the arithmetic</strong></td>
+<td>Every control says what it will do to the layer you have selected &mdash; &quot;radius 11 &rarr; 12&quot;, &quot;Y offset +2 &rarr; +3&quot; &mdash; and a greyed-out button says why it is greyed out.</td>
+</tr>
+<tr>
+<td><strong>It remembers</strong></td>
+<td>Break a configured projector and replace it, or carry it with Carry On, and it keeps its layers.</td>
+</tr>
+<tr>
+<td><strong>Server-authoritative</strong></td>
+<td>Limits live in <code>ModConfig/shapeprojector.json</code> &mdash; radius, layer count, guide-block budget, render distance, miniature size and style. A client cannot ask for a figure the server has not agreed to.</td>
+</tr>
+</tbody>
+</table>
+<p><em>Tested on Vintage Story 1.22.0 through 1.22.7, each patch release booted clean on its own and alongside Carry On, Chisel Tools, Farseer and Claims Radar.</em></p>

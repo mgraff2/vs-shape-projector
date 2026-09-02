@@ -1,0 +1,127 @@
+<!-- Paste into the "description" field of the ModDB page. -->
+
+<p style="font-size: 1.1em;"><strong>A surveyor&#39;s instrument for builders. Set it down, dial in a figure, and it casts a luminous guide onto the world &mdash; circles, rings, ellipses, rectangles, regular polygons, triangles and spirals, in layers around one shared centre.</strong> It places nothing and breaks nothing. It only shows you where, so the round tower is actually round and the moat closes on itself without a single block being counted by hand.</p>
+<table class="stdtable" style="width: 100%;">
+<tbody>
+<tr>
+<td style="width: 26%;"><strong>Where it installs</strong></td>
+<td>Client <em>and</em> server. The server owns the settings, your client draws them, so everyone playing needs it &mdash; and everyone sees the same guides.</td>
+</tr>
+<tr>
+<td><strong>Game version</strong></td>
+<td>Vintage Story 1.22.x &mdash; tested against every patch release, 1.22.0 through 1.22.7.</td>
+</tr>
+<tr>
+<td><strong>Other mods</strong></td>
+<td>Tested alongside Carry On, Chisel Tools, Farseer and Claims Radar &mdash; each on its own and all together, every release.</td>
+</tr>
+<tr>
+<td><strong>What it changes</strong></td>
+<td>Nothing in your world. The guides are light: no substance, no collision, no block ever placed or removed by the projector.</td>
+</tr>
+<tr>
+<td><strong>Getting one</strong></td>
+<td>A crafting recipe &mdash; four cupronickel or brass ingots, two cupronickel plates, two Jonas parts, a clear quartz and a temporal gear. Right-click the placed block to open its dial.</td>
+</tr>
+</tbody>
+</table>
+<h3>The problem it solves</h3>
+<p>Circles are the obvious one, but the real difficulty is anything that has to be <em>concentric</em>, <em>level</em>, or <em>laid on ground that is not flat</em>. A moat needs two circles a fixed distance apart. A round wall needs the same figure repeated thirty courses up. A hillside path needs a line that stays on the surface as the surface changes. All of that is arithmetic you would otherwise do with a tape of blocks and a lot of recounting.</p>
+<h3>Seven figures, forty-eight layers, one centre</h3>
+<table class="stdtable" style="width: 100%;">
+<thead>
+<tr>
+<th style="width: 22%;">Figure</th>
+<th>What you give it</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Circle</strong></td>
+<td>A radius, in half-block steps.</td>
+</tr>
+<tr>
+<td><strong>Ring</strong></td>
+<td>Two radii. It draws both circles and leaves the band between them empty &mdash; that band is what you dig.</td>
+</tr>
+<tr>
+<td><strong>Ellipse</strong></td>
+<td>A radius each way. Equal, and you have a circle.</td>
+</tr>
+<tr>
+<td><strong>Rectangle</strong></td>
+<td>Width and depth, edge to edge, with the drawn size always shown so parity never surprises you.</td>
+</tr>
+<tr>
+<td><strong>Regular polygon</strong></td>
+<td>Sides, a corner distance and a rotation. Three sides is a triangle; many is very nearly a circle.</td>
+</tr>
+<tr>
+<td><strong>Spiral</strong></td>
+<td>Turns, the gap between laps, and where it starts.</td>
+</tr>
+</tbody>
+</table>
+<p>Every layer shares the projector&#39;s centre and keeps its own size, colour, height offset and on/off switch. The centre moves in half-block steps &mdash; on a block for an odd diameter, on the seam between two for an even one &mdash; and it can sit well away from the projector, so the instrument stands beside the work instead of in the middle of it.</p>
+<h3>Thickness and height: one layer instead of twenty</h3>
+<p>A figure can be marked <strong>several blocks broad</strong> rather than several layers set one apart &mdash; the band grows inward, so the outer edge stays exactly where the radius puts it. And a figure can stand <strong>several blocks tall</strong>, so one layer describes a whole wall instead of one course each. A thirty-block round tower is one layer, not thirty.</p>
+<h3>Level, or laid on the land</h3>
+<table class="stdtable" style="width: 100%;">
+<tbody>
+<tr>
+<td style="width: 26%;"><strong>Fixed height</strong></td>
+<td>One dead-level line whatever the ground does &mdash; wall tops, floors, platforms. Where the earth swallows the line, cut down to it; where it hangs in air, fill up to it. That, too, is information.</td>
+</tr>
+<tr>
+<td><strong>Follow terrain</strong></td>
+<td>The line sits on the surface like a rope laid out by hand, and <strong>follows the floor down as you excavate</strong>, so a dig line is never lost halfway through the digging. Over a slope, a tall layer keeps its height.</td>
+</tr>
+<tr>
+<td><strong>Water</strong></td>
+<td>Yours to rule per layer: the line can rest on the surface and mark the bank, or look through to the bed and mark the bottom.</td>
+</tr>
+</tbody>
+</table>
+<h3>A worked example: the moat</h3>
+<p>Set the projector at the centre of a round holding and give it three layers.</p>
+<ol>
+<li>A <strong>ring</strong>, inner radius 20, outer radius 23, following the terrain. This is the moat, three blocks wide, both lines lying on the land wherever it goes. Dig between them; as the pit deepens the lines follow the floor down and the edge is never lost.</li>
+<li>A <strong>circle</strong>, radius 11, following the terrain. The path that rings the house, resting on whatever ground it crosses.</li>
+<li>A <strong>circle</strong>, radius 30, at fixed height, offset to the wall&#39;s intended top. Level all the way round &mdash; hanging in air where the ground falls away, buried where it rises. Build up to it.</li>
+</ol>
+<p>Three figures, one centre, concentric by construction. Nothing was counted.</p>
+<h3>While you build</h3>
+<table class="stdtable" style="width: 100%;">
+<tbody>
+<tr>
+<td style="width: 26%;"><strong>Marks turn green</strong></td>
+<td>Fill a marked block and its guide goes green, so the figure completes in front of you and you can see at a glance what is left.</td>
+</tr>
+<tr>
+<td><strong>A holographic miniature</strong></td>
+<td>The whole design in miniature, floating above the block, so you can read a forty-layer plan without walking it. Switchable on its own, without stopping the projection.</td>
+</tr>
+<tr>
+<td><strong>Named presets</strong></td>
+<td>Saved per player, not per projector, so a shape you worked out once follows you to every projector you own. Load one in place of what is there, or add it on top.</td>
+</tr>
+<tr>
+<td><strong>Shortcuts</strong></td>
+<td><strong>Page Up</strong> copies the selected layer one block higher, a course per press. <strong>Page Down</strong> copies it one block outward, filling toward a disc. <strong>+</strong> and <strong>&minus;</strong> grow or shrink every layer at once.</td>
+</tr>
+<tr>
+<td><strong>Tooltips that do the arithmetic</strong></td>
+<td>Hover any control and it tells you what it will do to <em>the layer you have selected</em> &mdash; &quot;radius 11 &rarr; 12&quot;, &quot;Y offset +2 &rarr; +3&quot; &mdash; not a general description.</td>
+</tr>
+<tr>
+<td><strong>Hide it all</strong></td>
+<td><strong>O</strong> hides every projection for you alone. Other players still see theirs.</td>
+</tr>
+<tr>
+<td><strong>It remembers</strong></td>
+<td>Break a configured projector and replace it, or carry it with Carry On, and it keeps its layers.</td>
+</tr>
+</tbody>
+</table>
+<h3>For server owners</h3>
+<p><code>ModConfig/shapeprojector.json</code> sets the ceilings: largest radius (256 by default) and layers per projector (48), the per-projector budget of guide blocks, render distance, and the miniature&#39;s size, placement and style. The projector is server-authoritative &mdash; a client cannot ask for a figure the server has not agreed to.</p>
