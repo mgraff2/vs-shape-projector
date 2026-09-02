@@ -1,0 +1,17 @@
+{
+  "$schema": "https://moddbcdn.vintagestory.at/schema/modinfo.latest.json",
+  "type": "code",
+  "modid": "shapeprojector",
+  "name": "Jonastech Shape Projector",
+  "authors": [
+    "markcgraff"
+  ],
+  "description": "Projects a luminous building guide onto the world: circles, rings, ellipses, rectangles, regular polygons, triangles and spirals, in layers around one shared centre. Outlines can lie level or drape over the terrain and follow it down as you dig, each layer with its own thickness, height, colour and height offset. Marks turn green as you fill them, a holographic miniature floats above the block, and named presets travel with you.",
+  "version": "1.0.0",
+  "side": "Universal",
+  "requiredOnClient": true,
+  "requiredOnServer": true,
+  "dependencies": {
+    "game": "1.22.0"
+  }
+}

@@ -1,0 +1,86 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Conventions follow the official VintageStory.Mod.Templates 1.22.0 csproj
+    (docs/api-notes.md §a.1): net10.0, HintPath into $(VINTAGE_STORY), Private=false,
+    AppendTargetFrameworkToOutputPath=false, output is the mod folder itself.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <!-- The Geometry sources rely on implicit usings (System, System.Linq, System.Collections.Generic). -->
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>ShapeProjector</AssemblyName>
+    <RootNamespace>ShapeProjector</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Output folder IS the mod folder: DLL + modinfo.json at root, assets/ beside them (api-notes §a.3). -->
+    <OutputPath>bin\$(Configuration)\Mods\shapeprojector\</OutputPath>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <!-- Game install / data folders. Override with environment variables of the same name. -->
+  <PropertyGroup>
+    <VINTAGE_STORY Condition="'$(VINTAGE_STORY)' == ''">$(AppData)\Vintagestory</VINTAGE_STORY>
+    <VINTAGE_STORY_DATA Condition="'$(VINTAGE_STORY_DATA)' == ''">$(AppData)\VintagestoryData</VINTAGE_STORY_DATA>
+  </PropertyGroup>
+
+  <!--
+    Only VintagestoryAPI.dll is referenced: every type the prototype uses lives there
+    (api-notes §a.1 "Which references the step-1 prototype actually uses").
+    Add VSSurvivalMod / VintagestoryLib / Lib\*.dll only when a type from them is used.
+  -->
+  <ItemGroup>
+    <Reference Include="VintagestoryAPI">
+      <HintPath>$(VINTAGE_STORY)\VintagestoryAPI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Per-entry preset parsing (spec §10b): Newtonsoft ships with the game (Lib\), so
+         Private=false and the runtime resolves the game's own copy — ledger §n.2. -->
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(VINTAGE_STORY)\Lib\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    The Geometer's library (src/ShapeProjector.Geometry) is compiled INTO this assembly rather than
+    shipped as a second DLL: the mod loader picks exactly one DLL with a ModSystem (ModContainer.cs:502-510)
+    and resolves other assemblies through an AssemblyResolve handler that probes
+    Path.Combine(searchPath, args.Name + ".dll") (ModAssemblyLoader.cs:40-61); whether that matches a
+    plain "ShapeProjector.Geometry.dll" for a full display name could not be verified from source
+    (docs/api-notes.md), so the source-include route is used. The Geometry project keeps its own
+    csproj for the unit tests.
+  -->
+  <ItemGroup>
+    <Compile Include="..\ShapeProjector.Geometry\**\*.cs"
+             Exclude="..\ShapeProjector.Geometry\bin\**;..\ShapeProjector.Geometry\obj\**"
+             Link="Geometry\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- modinfo.json and assets/ are copied next to the DLL, preserving the assets/<modid>/... tree. -->
+  <ItemGroup>
+    <Content Include="modinfo.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="assets\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!--
+    Manual install step (NOT run by a normal build):
+      dotnet build -c Release -t:InstallMod
+    Copies the built mod folder to $(VINTAGE_STORY_DATA)\Mods\shapeprojector\ (api-notes §a.3).
+  -->
+  <Target Name="InstallMod" DependsOnTargets="Build">
+    <ItemGroup>
+      <_ModFiles Include="$(OutDir)**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ModFiles)" DestinationFiles="@(_ModFiles->'$(VINTAGE_STORY_DATA)\Mods\shapeprojector\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Message Importance="high" Text="Installed mod to $(VINTAGE_STORY_DATA)\Mods\shapeprojector\" />
+  </Target>
+
+</Project>

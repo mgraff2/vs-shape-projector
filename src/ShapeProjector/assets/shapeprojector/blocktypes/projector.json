@@ -1,0 +1,63 @@
+{
+	"code": "projector",
+	"class": "BlockShapeProjector",
+	"entityClass": "BEShapeProjector",
+
+	"variantgroups": [
+		{ "code": "state", "states": ["off", "on"] }
+	],
+
+	"creativeinventory": { "general": ["*-off"], "decorative": ["*-off"] },
+
+	"drawtype": "json",
+	"shapebytype": {
+		"*-off": { "base": "shapeprojector:block/projector" },
+		"*-on":  { "base": "shapeprojector:block/projector-on" }
+	},
+
+	"blockmaterial": "Metal",
+	"replaceable": 800,
+	"resistance": 3,
+	"lightAbsorption": 0,
+	"sidesolid": { "all": false },
+	"sideopaque": { "all": false },
+	"sideao": { "all": false },
+
+	"collisionbox": { "x1": 0, "y1": 0, "z1": 0, "x2": 1, "y2": 0.75, "z2": 1 },
+	"selectionbox": { "x1": 0, "y1": 0, "z1": 0, "x2": 1, "y2": 0.75, "z2": 1 },
+
+	"drops": [
+		{ "type": "block", "code": "shapeprojector:projector-off" }
+	],
+
+	"attributesByType": {
+		"*-off": {
+			"handbook": {
+				"extraSections": [
+					{ "title": "shapeprojector:handbook-projector-center-title",   "text": "shapeprojector:handbook-projector-center-text" },
+					{ "title": "shapeprojector:handbook-projector-layers-title",   "text": "shapeprojector:handbook-projector-layers-text" },
+					{ "title": "shapeprojector:handbook-projector-vertical-title", "text": "shapeprojector:handbook-projector-vertical-text" },
+					{ "title": "shapeprojector:handbook-projector-example-title",  "text": "shapeprojector:handbook-projector-example-text" }
+				]
+			}
+		},
+		"*-on": {
+			"handbook": { "exclude": true }
+		}
+	},
+
+	"heldTpIdleAnimation": "holdbothhandslarge",
+	"heldRightReadyAnimation": "heldblockready",
+	"heldTpUseAnimation": "twohandplaceblock",
+	"guiTransform": {
+		"origin": { "x": 0.5, "y": 0.4, "z": 0.5 },
+		"scale": 1.18
+	},
+
+	"sounds": {
+		"place": "game:block/planks",
+		"break": "game:block/planks",
+		"hit": "game:block/planks",
+		"walk": "game:walk/wood"
+	}
+}

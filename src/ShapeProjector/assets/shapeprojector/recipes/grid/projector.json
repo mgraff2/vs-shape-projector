@@ -1,0 +1,13 @@
+{
+	"ingredientPattern": "MPM,JQJ,MGM",
+	"ingredients": {
+		"M": { "type": "item", "code": "game:ingot-*", "allowedVariants": ["cupronickel", "brass"] },
+		"P": { "type": "item", "code": "game:metalplate-cupronickel", "quantity": 2 },
+		"J": { "type": "item", "code": "game:jonasparts-*" },
+		"Q": { "type": "item", "code": "game:clearquartz" },
+		"G": { "type": "item", "code": "game:gear-temporal" }
+	},
+	"width": 3,
+	"height": 3,
+	"output": { "type": "block", "code": "shapeprojector:projector-off", "quantity": 1 }
+}
