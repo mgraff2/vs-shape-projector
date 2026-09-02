@@ -1,37 +1,41 @@
 <!-- Paste into the "description" field of the ModDB page. -->
 
-<p style="font-size: 1.1em;"><strong>A surveyor&#39;s instrument for builders. Set it down, dial in a figure, and it casts a luminous guide onto the world &mdash; circles, rings, ellipses, rectangles, regular polygons, triangles and spirals, in layers around one shared centre.</strong> It places nothing and breaks nothing. It only shows you where, so the round tower is actually round and the moat closes on itself without a single block being counted by hand.</p>
+<p style="font-size: 1.1em;"><strong>Set it down, dial in a figure, and it casts a luminous guide onto the ground.</strong> Circles, rings, ellipses, rectangles, polygons and spirals, in layers around one shared centre, each able to lie dead level or lie on the land and follow the floor down as you dig. It places nothing and breaks nothing. It only shows you where, so the round tower is actually round and the moat closes on itself without a block being counted by hand.</p>
 <table class="stdtable" style="width: 100%;">
 <tbody>
 <tr>
-<td style="width: 26%;"><strong>Where it installs</strong></td>
-<td>Client <em>and</em> server. The server owns the settings, your client draws them, so everyone playing needs it &mdash; and everyone sees the same guides.</td>
+<td style="width: 24%;"><strong>Installs on</strong></td>
+<td>Client <strong>and</strong> server. The server owns the figures, your client draws them, so everyone playing needs it &mdash; and everyone sees the same guides.</td>
 </tr>
 <tr>
 <td><strong>Game version</strong></td>
-<td>Vintage Story 1.22.x &mdash; tested against every patch release, 1.22.0 through 1.22.7.</td>
+<td>Vintage Story 1.22.x, tested against every patch from 1.22.0 to 1.22.7.</td>
 </tr>
 <tr>
 <td><strong>Other mods</strong></td>
-<td>Tested alongside Carry On, Chisel Tools, Farseer and Claims Radar &mdash; each on its own and all together, every release.</td>
+<td>Tested alongside Carry On, Chisel Tools, Farseer and Claims Radar, each on its own and all together, every release.</td>
 </tr>
 <tr>
-<td><strong>What it changes</strong></td>
-<td>Nothing in your world. The guides are light: no substance, no collision, no block ever placed or removed by the projector.</td>
+<td><strong>What it writes</strong></td>
+<td>Nothing in your world. The guides are light: no substance, no collision, and the projector never places or removes a block.</td>
 </tr>
 <tr>
 <td><strong>Getting one</strong></td>
-<td>A crafting recipe &mdash; four cupronickel or brass ingots, two cupronickel plates, two Jonas parts, a clear quartz and a temporal gear. Right-click the placed block to open its dial.</td>
+<td>Craft it from four cupronickel or brass ingots, two cupronickel plates, two Jonas parts, a clear quartz and a temporal gear. Place it, right-click it, and the dial opens.</td>
+</tr>
+<tr>
+<td><strong>Keys</strong></td>
+<td><strong>O</strong> hides every projection for you alone, rebindable. Inside the dial: <strong>Page Up</strong> stacks a copy of the selected layer a course higher, <strong>Page Down</strong> copies it a block outward, <strong>+</strong> and <strong>&minus;</strong> resize every layer at once.</td>
 </tr>
 </tbody>
 </table>
 <h3>The problem it solves</h3>
-<p>Circles are the obvious one, but the real difficulty is anything that has to be <em>concentric</em>, <em>level</em>, or <em>laid on ground that is not flat</em>. A moat needs two circles a fixed distance apart. A round wall needs the same figure repeated thirty courses up. A hillside path needs a line that stays on the surface as the surface changes. All of that is arithmetic you would otherwise do with a tape of blocks and a lot of recounting.</p>
-<h3>Seven figures, forty-eight layers, one centre</h3>
+<p>Circles are the obvious one. The real difficulty is anything that has to be <strong>concentric</strong>, <strong>level</strong>, or <strong>laid on ground that is not flat</strong> &mdash; a moat whose two banks stay a fixed distance apart, a wall that repeats the same figure thirty courses up, a path that hugs a hillside. That is arithmetic you would otherwise do with a tape of blocks and a great deal of recounting.</p>
+<h3>Six shapes, forty-eight layers, one centre</h3>
 <table class="stdtable" style="width: 100%;">
 <thead>
 <tr>
-<th style="width: 22%;">Figure</th>
+<th style="width: 22%;">Shape</th>
 <th>What you give it</th>
 </tr>
 </thead>
@@ -54,7 +58,7 @@
 </tr>
 <tr>
 <td><strong>Regular polygon</strong></td>
-<td>Sides, a corner distance and a rotation. Three sides is a triangle; many is very nearly a circle.</td>
+<td>Sides, a corner distance and a rotation. Three sides is the triangle; many is very nearly a circle.</td>
 </tr>
 <tr>
 <td><strong>Spiral</strong></td>
@@ -62,66 +66,173 @@
 </tr>
 </tbody>
 </table>
-<p>Every layer shares the projector&#39;s centre and keeps its own size, colour, height offset and on/off switch. The centre moves in half-block steps &mdash; on a block for an odd diameter, on the seam between two for an even one &mdash; and it can sit well away from the projector, so the instrument stands beside the work instead of in the middle of it.</p>
-<h3>Thickness and height: one layer instead of twenty</h3>
-<p>A figure can be marked <strong>several blocks broad</strong> rather than several layers set one apart &mdash; the band grows inward, so the outer edge stays exactly where the radius puts it. And a figure can stand <strong>several blocks tall</strong>, so one layer describes a whole wall instead of one course each. A thirty-block round tower is one layer, not thirty.</p>
-<h3>Level, or laid on the land</h3>
+<p><small>Every layer shares the projector&#39;s centre and keeps its own size, thickness, height, colour, height offset and on/off switch.</small></p>
+<h3>What each part does</h3>
+<p><small>Click a heading to open it.</small></p>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Layers and the shared centre <span style="font-weight: normal; color: var(--color-text-weak);">(concentric by construction, not by counting)</span></div>
+<div class="spoiler-text">
+<ul>
+<li><strong>Up to forty-eight figures at once</strong>, all drawn around one centre. Concentric is the default state rather than something you achieve.</li>
+<li><strong>The centre moves in half-block steps</strong> &mdash; on a block for an odd diameter, on the seam between two blocks for an even one. That single choice is what usually goes wrong when circles are laid by hand.</li>
+<li><strong>The centre need not be the projector.</strong> Offset it as far as you like and the instrument stands beside the work: in open water, inside a wall already standing, anywhere the middle of the figure is inconvenient to occupy. The dial shows the resolved centre, and a marker inside the miniature says where the projector itself sits within the design.</li>
+<li><strong>Add, remove, duplicate, reorder.</strong> Reordering is list order only &mdash; every setting travels with its layer, so nothing in the world moves.</li>
+<li><strong>Switch a layer off</strong> to hide it without losing it. Its settings are kept, and a global resize still adjusts it, so a hidden layer never falls out of step with the rest.</li>
+</ul>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Thickness and height <span style="font-weight: normal; color: var(--color-text-weak);">(one layer instead of twenty)</span></div>
+<div class="spoiler-text">
+<ul>
+<li><strong>Thickness</strong> marks a figure several blocks broad in one layer, instead of stacking several layers a block apart. The band grows <em>inward</em>, so the outer edge stays exactly where the radius puts it &mdash; radius 11 at thickness 3 runs from about 9 out to 11.</li>
+<li><strong>Height</strong> stands a figure several blocks tall in one layer, so a thirty-block round tower is <em>one</em> layer rather than thirty. The figure repeats on that many levels going up from the layer&#39;s own offset.</li>
+<li><strong>Height obeys the ground.</strong> In Follow terrain each column is measured from its own surface, so a wall of even height rises over uneven land instead of levelling out.</li>
+<li><strong>Build feedback checks every level separately</strong>, so a half-built wall turns green as far up as it is finished.</li>
+</ul>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">Level, or laid on the land <span style="font-weight: normal; color: var(--color-text-weak);">(the two ways a layer can stand)</span></div>
+<div class="spoiler-text">
 <table class="stdtable" style="width: 100%;">
 <tbody>
 <tr>
-<td style="width: 26%;"><strong>Fixed height</strong></td>
+<td style="width: 22%;"><strong>Fixed height</strong></td>
 <td>One dead-level line whatever the ground does &mdash; wall tops, floors, platforms. Where the earth swallows the line, cut down to it; where it hangs in air, fill up to it. That, too, is information.</td>
 </tr>
 <tr>
 <td><strong>Follow terrain</strong></td>
-<td>The line sits on the surface like a rope laid out by hand, and <strong>follows the floor down as you excavate</strong>, so a dig line is never lost halfway through the digging. Over a slope, a tall layer keeps its height.</td>
+<td>The line sits on the surface like a rope laid out by hand, and <strong>follows the floor down as you excavate</strong>. The dig line is never lost halfway through the digging, and it always marks the present floor&#39;s edge.</td>
 </tr>
 <tr>
 <td><strong>Water</strong></td>
-<td>Yours to rule per layer: the line can rest on the surface and mark the bank, or look through to the bed and mark the bottom.</td>
+<td>Yours to rule, per layer. The line can rest on the water&#39;s surface and mark the bank, or look through it to the bed and mark the bottom.</td>
+</tr>
+<tr>
+<td><strong>Unloaded ground</strong></td>
+<td>Columns whose land has not loaded yet stand at fixed height until it does, rather than guessing.</td>
 </tr>
 </tbody>
 </table>
-<h3>A worked example: the moat</h3>
+<p><small>Circles, rings and spirals start out following the terrain, being usually of the landscape; rectangles and polygons start level, being usually of the building. Either may be changed on any layer.</small></p>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">A worked example: the moat <span style="font-weight: normal; color: var(--color-text-weak);">(three layers, one centre, nothing counted)</span></div>
+<div class="spoiler-text">
 <p>Set the projector at the centre of a round holding and give it three layers.</p>
 <ol>
 <li>A <strong>ring</strong>, inner radius 20, outer radius 23, following the terrain. This is the moat, three blocks wide, both lines lying on the land wherever it goes. Dig between them; as the pit deepens the lines follow the floor down and the edge is never lost.</li>
 <li>A <strong>circle</strong>, radius 11, following the terrain. The path that rings the house, resting on whatever ground it crosses.</li>
-<li>A <strong>circle</strong>, radius 30, at fixed height, offset to the wall&#39;s intended top. Level all the way round &mdash; hanging in air where the ground falls away, buried where it rises. Build up to it.</li>
+<li>A <strong>circle</strong>, radius 30, at fixed height with an offset to the wall&#39;s intended top. Level all the way round &mdash; hanging in air where the ground falls away, buried where it rises. Build up to it.</li>
 </ol>
 <p>Three figures, one centre, concentric by construction. Nothing was counted.</p>
-<h3>While you build</h3>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">While you build <span style="font-weight: normal; color: var(--color-text-weak);">(feedback, the miniature, presets, shortcuts)</span></div>
+<div class="spoiler-text">
+<ul>
+<li><strong>Marks turn green as you fill them.</strong> Place a block where a guide stands and its mark goes green, so the figure completes in front of you and what is left is obvious at a glance.</li>
+<li><strong>A holographic miniature</strong> floats above the block: the whole design in small, world-aligned so north in the mini is north in the world. Read a forty-layer plan without walking it. It can be switched off on its own, without stopping the projection, and server owners can set its size, height and style.</li>
+<li><strong>Named presets are saved per player, not per projector</strong>, so a shape you worked out once follows you to every projector you can edit. Load one in place of what is there, or add it on top of it.</li>
+<li><strong>Shortcuts for the repetitive part.</strong> <strong>Page Up</strong> copies the selected layer one block higher &mdash; a course per press, thirty presses for a thirty-block tower. <strong>Page Down</strong> copies it one block outward, filling toward a solid disc. <strong>+</strong> and <strong>&minus;</strong> grow or shrink every layer at once, including the hidden ones, so nothing drifts out of step.</li>
+<li><strong>Tooltips that do the arithmetic.</strong> Hover any control and it tells you what it will do to <em>the layer you have selected</em> &mdash; &quot;radius 11 &rarr; 12&quot;, &quot;Y offset +2 &rarr; +3&quot;, &quot;width and depth both +2, one block on each of the four sides&quot; &mdash; and a greyed-out button says why it is greyed out.</li>
+<li><strong>A resize that would shrink a layer past its minimum leaves it alone and says so</strong>, rather than silently doing something else.</li>
+<li><strong>O hides every projection for you alone.</strong> Other players still see theirs.</li>
+<li><strong>It remembers.</strong> Break a configured projector and replace it, or carry it with Carry On, and it keeps its layers.</li>
+</ul>
+</div>
+</div>
+<div class="spoiler">
+<div class="spoiler-toggle" style="font-size: 15px;">For server owners <span style="font-weight: normal; color: var(--color-text-weak);">(every limit, and who decides)</span></div>
+<div class="spoiler-text">
+<p>The projector is server-authoritative: a client cannot ask for a figure the server has not agreed to. Settings live in <code>ModConfig/shapeprojector.json</code>.</p>
 <table class="stdtable" style="width: 100%;">
+<thead>
+<tr>
+<th style="width: 30%;">Setting</th>
+<th style="width: 12%;">Default</th>
+<th>What it does</th>
+</tr>
+</thead>
 <tbody>
 <tr>
-<td style="width: 26%;"><strong>Marks turn green</strong></td>
-<td>Fill a marked block and its guide goes green, so the figure completes in front of you and you can see at a glance what is left.</td>
+<td><code>maxRadius</code></td>
+<td>256</td>
+<td>Largest radius, and largest centre offset, any layer may use</td>
 </tr>
 <tr>
-<td><strong>A holographic miniature</strong></td>
-<td>The whole design in miniature, floating above the block, so you can read a forty-layer plan without walking it. Switchable on its own, without stopping the projection.</td>
+<td><code>maxLayersPerProjector</code></td>
+<td>48</td>
+<td>Figures one projector may hold</td>
 </tr>
 <tr>
-<td><strong>Named presets</strong></td>
-<td>Saved per player, not per projector, so a shape you worked out once follows you to every projector you own. Load one in place of what is there, or add it on top.</td>
+<td><code>maxOutlineThickness</code></td>
+<td>32</td>
+<td>Broadest a single layer&#39;s band may be</td>
 </tr>
 <tr>
-<td><strong>Shortcuts</strong></td>
-<td><strong>Page Up</strong> copies the selected layer one block higher, a course per press. <strong>Page Down</strong> copies it one block outward, filling toward a disc. <strong>+</strong> and <strong>&minus;</strong> grow or shrink every layer at once.</td>
+<td><code>maxLayerHeight</code></td>
+<td>256</td>
+<td>Tallest a single layer may stand</td>
 </tr>
 <tr>
-<td><strong>Tooltips that do the arithmetic</strong></td>
-<td>Hover any control and it tells you what it will do to <em>the layer you have selected</em> &mdash; &quot;radius 11 &rarr; 12&quot;, &quot;Y offset +2 &rarr; +3&quot; &mdash; not a general description.</td>
+<td><code>maxCellsPerProjector</code></td>
+<td>60000</td>
+<td>Guide blocks one projector may draw. Over the budget a layer gives up height before it gives up its shape, so an over-ambitious figure still reads as itself</td>
 </tr>
 <tr>
-<td><strong>Hide it all</strong></td>
-<td><strong>O</strong> hides every projection for you alone. Other players still see theirs.</td>
+<td><code>renderDistance</code></td>
+<td>160</td>
+<td>Blocks beyond which a projection is not drawn</td>
 </tr>
 <tr>
-<td><strong>It remembers</strong></td>
-<td>Break a configured projector and replace it, or carry it with Carry On, and it keeps its layers.</td>
+<td><code>showBuildFeedback</code></td>
+<td>true</td>
+<td>The green &quot;already built&quot; tint, server-wide</td>
+</tr>
+<tr>
+<td><code>seeThroughDepth</code></td>
+<td>6</td>
+<td>How deep through terrain a guide stays visible</td>
+</tr>
+<tr>
+<td><code>clientHideHotkey</code></td>
+<td><code>O</code></td>
+<td>Default key for the personal hide toggle</td>
+</tr>
+<tr>
+<td><code>holoSize</code> / <code>holoOffsetY</code></td>
+<td>1.5 / 0.0</td>
+<td>Size of the miniature, and how far above the block it floats</td>
+</tr>
+<tr>
+<td><code>holoMode</code> / <code>holoStyle</code></td>
+<td>always / layered</td>
+<td>When the miniature shows, and whether it keeps each layer&#39;s colour</td>
+</tr>
+<tr>
+<td><code>previewMaxBlocks</code></td>
+<td>20000</td>
+<td>Block budget for the miniature</td>
 </tr>
 </tbody>
 </table>
-<h3>For server owners</h3>
-<p><code>ModConfig/shapeprojector.json</code> sets the ceilings: largest radius (256 by default) and layers per projector (48), the per-projector budget of guide blocks, render distance, and the miniature&#39;s size, placement and style. The projector is server-authoritative &mdash; a client cannot ask for a figure the server has not agreed to.</p>
+</div>
+</div>
+<h3>What the Shape Projector will never do</h3>
+<ul>
+<li><strong>Place a block, or break one.</strong> It marks and nothing else. That is a decision rather than a limitation: a mod that only draws can never flatten the thing you were standing on.</li>
+<li><strong>Get in your way.</strong> The guides have no substance and no collision. You walk through them, build through them, and the block you place is exactly the block you placed.</li>
+<li><strong>Follow you around.</strong> A figure belongs to the projector that casts it. Take the projector away and the guide goes with it.</li>
+<li><strong>Guess.</strong> Where the ground has not loaded, a draped line stands at fixed height and says nothing rather than inventing a surface.</li>
+</ul>
+<h3>Good to know</h3>
+<ul>
+<li>Outlines are recomputed only when something actually changes, and a draped line re-resolves just the columns you dug &mdash; not the whole figure, every frame.</li>
+<li>The green &quot;done&quot; tint is for level layers. A draped line follows the surface, so it can never be filled in.</li>
+<li>The handbook carries the full explanation in-game: the centre and its offset, layers, the two ways of standing, and the moat worked through.</li>
+<li>Config lives at <code>VintagestoryData/ModConfig/shapeprojector.json</code>; your saved presets at <code>VintagestoryData/ModData/shapeprojector/presets.json</code>.</li>
+</ul>
