@@ -138,19 +138,33 @@ namespace ShapeProjector
                 return;
             }
 
-            // ---- Framing: block-local bbox of all enabled layers' cells (spec §10c "Scale & framing").
-            // Cells are unit cubes at (X..X+1, Y..Y+1, Z..Z+1) relative to the projector block corner.
+            // ---- Framing: block-local bbox of every SHOWN segment's cells (spec §10c "Scale & framing";
+            // the figures can be hidden from the mini, user request 2026-09-07 — then only the
+            // surroundings model frames it). Cells are unit cubes at (X..X+1, Y..Y+1, Z..Z+1)
+            // relative to the projector block corner.
             int minX = int.MaxValue, minY = int.MaxValue, minZ = int.MaxValue;
             int maxX = int.MinValue, maxY = int.MinValue, maxZ = int.MinValue;
-            for (int i = 0; i < cells.Count; i++)
+            int shown = 0;
+            foreach (PreviewSegment seg in be.PreviewSegments)
             {
-                GhostCell c = cells[i];
-                if (c.X < minX) minX = c.X;
-                if (c.Y < minY) minY = c.Y;
-                if (c.Z < minZ) minZ = c.Z;
-                if (c.X > maxX) maxX = c.X;
-                if (c.Y > maxY) maxY = c.Y;
-                if (c.Z > maxZ) maxZ = c.Z;
+                if (!ShowSegment(seg)) continue;
+                int fpX = seg.Footprint - 1;   // a sampled surroundings tile spans Footprint cells in X and Z
+                for (int i = seg.CellStart; i < seg.CellStart + seg.Count; i++)
+                {
+                    GhostCell c = cells[i];
+                    if (c.X < minX) minX = c.X;
+                    if (c.Y < minY) minY = c.Y;
+                    if (c.Z < minZ) minZ = c.Z;
+                    if (c.X + fpX > maxX) maxX = c.X + fpX;
+                    if (c.Y > maxY) maxY = c.Y;
+                    if (c.Z + fpX > maxZ) maxZ = c.Z + fpX;
+                    shown++;
+                }
+            }
+            if (shown == 0)
+            {
+                DeleteMeshes();
+                return;
             }
 
             // Center honesty (spec §10c): when the shape center offset ≠ 0 the projector's OWN cell
@@ -167,6 +181,23 @@ namespace ShapeProjector
                 if (0 > maxX) maxX = 0;
                 if (0 > maxY) maxY = 0;
                 if (0 > maxZ) maxZ = 0;
+            }
+
+            // Surroundings model present (user question 2026-09-07, "why doesn't the environment
+            // view center on the projector"): the model box is symmetric about the projector, but
+            // figures reaching past its radius on one side, a chunk edge not yet loaded on one side,
+            // or the cell budget cutting the far edge all skew the bbox and with it the miniature.
+            // With the model on, the horizontal frame is forced symmetric about the projector cell,
+            // so the projector is always the middle of the model; vertical framing stays by content
+            // (a symmetric height window would waste the volume on empty air).
+            bool hasTerrain = false;
+            foreach (PreviewSegment seg in be.PreviewSegments) if (seg.LayerIndex < 0) { hasTerrain = true; break; }
+            if (hasTerrain)
+            {
+                int extX = Math.Max(-minX, maxX);
+                int extZ = Math.Max(-minZ, maxZ);
+                minX = -extX; maxX = extX;
+                minZ = -extZ; maxZ = extZ;
             }
 
             sizeXf = maxX + 1 - minX;
@@ -195,6 +226,9 @@ namespace ShapeProjector
             RebuildStatic(cells);
             RebuildFill(cells);
         }
+
+        /// <summary>Which segments the mini draws: the surroundings model always; the figures only while the projector's HologramFigures switch is on (user request 2026-09-07).</summary>
+        private bool ShowSegment(PreviewSegment seg) => seg.LayerIndex < 0 || be.Params.HologramFigures;
 
         /// <summary>Maps a block-local point into holo space (block-local, around the volume center). Translate+scale only — never rotates (spec §10c).</summary>
         private void MapPoint(float x, float y, float z, out float hx, out float hy, out float hz)
@@ -231,11 +265,14 @@ namespace ShapeProjector
             float half = scale * CellFill * 0.5f;
             foreach (PreviewSegment seg in be.PreviewSegments)
             {
+                if (!ShowSegment(seg)) continue;
+                float fp = seg.Footprint;   // sampled surroundings tiles are fp cells wide (X/Z), one tall
+                float halfXZ = half * fp;
                 for (int j = 0; j < seg.Count; j += stride)
                 {
                     GhostCell c = cells[seg.CellStart + j];
-                    MapPoint(c.X + 0.5f, c.Y + 0.5f, c.Z + 0.5f, out float hx, out float hy, out float hz);
-                    AddCubeEdges(mesh, hx, hy, hz, half);
+                    MapPoint(c.X + fp * 0.5f, c.Y + 0.5f, c.Z + fp * 0.5f, out float hx, out float hy, out float hz);
+                    AddCubeEdges(mesh, hx, hy, hz, halfXZ, half, halfXZ);
                 }
             }
             // No edge outline on the offset indicator (ruling 10): dark cube edges are what make a
@@ -282,6 +319,12 @@ namespace ShapeProjector
             foreach (PreviewSegment seg in be.PreviewSegments)
             {
                 bool isSelected = selected.HasValue && seg.LayerIndex == selected.Value;
+                if (!ShowSegment(seg)) continue;
+                // Surroundings model (user request 2026-09-07): LayerIndex -1, always its own colour —
+                // never re-hued by mono, never selected. Sampled tiles are Footprint cells wide.
+                bool terrain = seg.LayerIndex < 0;
+                float fp = seg.Footprint;
+                float sizeXZ = size * fp;
                 for (int j = 0; j < seg.Count; j += stride)
                 {
                     GhostCell c = cells[seg.CellStart + j];
@@ -292,12 +335,15 @@ namespace ShapeProjector
                     // colour that layer happens to carry. The selected treatment on top (x1.3 brighten,
                     // 35% toward white, full alpha) is what keeps it apart from the build-feedback done
                     // tint, which is the same palette green at the dimmer unselected alpha.
+                    // Done cells are told by RGB alone: the world alpha follows the projector's
+                    // GhostOpacity (2026-09-07) and TreatColor replaces it anyway.
+                    bool isDone = (c.Color & 0xFFFFFF) == (doneColor & 0xFFFFFF);
                     int baseColor = isSelected
                         ? SelectedHue
-                        : (mono && c.Color != doneColor ? monoBase : c.Color);
+                        : (mono && !terrain && !isDone ? monoBase : c.Color);
                     int color = TreatColor(baseColor, isSelected);
-                    MapPoint(c.X + 0.5f, c.Y + 0.5f, c.Z + 0.5f, out float hx, out float hy, out float hz);
-                    AddCubeFaces(mesh, hx, hy, hz, size, size, size, color, shaded: true);
+                    MapPoint(c.X + fp * 0.5f, c.Y + 0.5f, c.Z + fp * 0.5f, out float hx, out float hy, out float hz);
+                    AddCubeFaces(mesh, hx, hy, hz, sizeXZ, size, sizeXZ, color, shaded: true);
                 }
             }
 
@@ -366,14 +412,14 @@ namespace ShapeProjector
             0,4, 1,5, 2,6, 3,7,   // Z-parallel
         };
 
-        private static void AddCubeEdges(MeshData mesh, float cx, float cy, float cz, float half)
+        private static void AddCubeEdges(MeshData mesh, float cx, float cy, float cz, float halfX, float halfY, float halfZ)
         {
             int baseVert = mesh.VerticesCount;   // public int VerticesCount — api-notes §d.3 (MeshData.cs:208)
             for (int corner = 0; corner < 8; corner++)
             {
-                float x = cx + (((corner & 1) != 0) ? half : -half);
-                float y = cy + (((corner & 2) != 0) ? half : -half);
-                float z = cz + (((corner & 4) != 0) ? half : -half);
+                float x = cx + (((corner & 1) != 0) ? halfX : -halfX);
+                float y = cy + (((corner & 2) != 0) ? halfY : -halfY);
+                float z = cz + (((corner & 4) != 0) ? halfZ : -halfZ);
                 // AddVertexSkipTex(float x, float y, float z, int color) writes xyz + packed rgba only
                 // — api-notes §o.1 (MeshData.cs:1158-1176).
                 mesh.AddVertexSkipTex(x, y, z, EdgeColor);

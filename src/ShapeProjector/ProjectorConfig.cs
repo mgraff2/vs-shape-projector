@@ -28,9 +28,11 @@ namespace ShapeProjector
         /// (user request 2026-09-02); this is only the starting value, not a global override.</summary>
         public int outlineThickness = 1;
         /// <summary>Cap on a layer's own outline thickness (user request 2026-09-02). Thickness grows
-        /// INWARD from the shape's outer extent, so the practical ceiling is the shape's own radius —
-        /// this is the cost guard, not the geometry limit.</summary>
-        public int maxOutlineThickness = 32;
+        /// INWARD from the shape's outer extent, so the real ceiling is the shape's own radius
+        /// (LayerParams.MaxThickness) — at that value the figure is solid. Raised 32 → 256 = maxRadius
+        /// on user request 2026-09-07 ("thickness maximum up to the radius") so no figure is stopped
+        /// short of solid; cost is held by maxCellsPerProjector, which sees the columns x height product.</summary>
+        public int maxOutlineThickness = 256;
         /// <summary>Cap on a layer's own vertical extent in blocks (user request 2026-09-02): one layer
         /// can stand N blocks tall instead of needing N stacked layers. Guards the cell count, which
         /// grows linearly with it.</summary>
@@ -46,6 +48,24 @@ namespace ShapeProjector
         /// </summary>
         public int maxCellsPerProjector = 60000;
         public bool showBuildFeedback = true;
+        /// <summary>
+        /// Ceilings for the surroundings model (user request 2026-09-07). The radius ceiling is the
+        /// figure radius's (256 — "I want to see 256 in action"); cost is held by
+        /// <see cref="terrainModelMaxSpan"/>, not by the radius: past that span the model samples
+        /// every 2nd, 3rd, 4th... column and draws each sample as a tile that wide, so a 513-column
+        /// box costs what a 129-column box costs and reads as a coarser survey rather than a slower
+        /// one. The height window bounds how deep a column scan can go. Both per-projector values
+        /// (ProjectorParams.TerrainMapRadius/Height) are clamped to these on the server.
+        /// </summary>
+        public int maxTerrainMapRadius = 256;
+        public int maxTerrainMapHeight = 32;
+        /// <summary>
+        /// Most sampled columns per axis in the surroundings model (client-side cost knob): the
+        /// sampling step is ceil((2r+1) / this), so radius 64 is still block-exact (129 columns) and
+        /// radius 256 samples every 4th column. Also bounds the rescan a block change inside the
+        /// box triggers (debounced to a few hundred ms in the block entity).
+        /// </summary>
+        public int terrainModelMaxSpan = 129;
         public int seeThroughDepth = 6;
         /// <summary>"shader" (default): the api-notes §f.4 depth-compare pass at AfterBlit;
         /// "off": no through-terrain reveal (outline is plain depth-tested only).</summary>
@@ -114,6 +134,9 @@ namespace ShapeProjector
             if (maxOutlineThickness < 1) maxOutlineThickness = 1;
             if (outlineThickness > maxOutlineThickness) outlineThickness = maxOutlineThickness;
             if (maxLayerHeight < 1) maxLayerHeight = 1;
+            if (maxTerrainMapRadius < 1) maxTerrainMapRadius = 1;
+            if (maxTerrainMapHeight < 1) maxTerrainMapHeight = 1;
+            if (terrainModelMaxSpan < 9) terrainModelMaxSpan = 9;
             if (maxCellsPerProjector < 1000) maxCellsPerProjector = 1000;
             if (seeThroughDepth < 0) seeThroughDepth = 0;
             if (seeThroughMode != "off") seeThroughMode = "shader";

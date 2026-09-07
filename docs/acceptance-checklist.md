@@ -91,6 +91,8 @@ Report these 24 in one message and I'll file the step-3 verdict.
 | S2-11 | 3 (2 players) | Player B stands in a land claim owned by A; B right-clicks A's projector inside the claim and tries to change the radius | Edit refused (vanilla claim permissions govern who may edit); A can edit | |
 | S2-12 | 3 (2 players) | B (outside any claim) opens the GUI | B can *view*; **SPEC QUESTION Q3:** should anyone at all be able to edit an unclaimed projector? Spec only says vanilla claim permissions govern | |
 | S2-13 | 1 | Join a fresh client that does not have the mod installed (2nd client, or delete the mod locally) | Mod is auto-pushed to the joining client ("server-distributed … auto-pushed to joining clients") | |
+| S2-14 | 3 | Build a 48-layer tower with Add Layer Up (one circle, Page Up ×47), close the dial, then look at the projector | Block-info panel is short: one "Layers 1–48: Circle, radius r=…, Y offset 0 to 47" line, never one line per layer. Right-click still opens the dial and tools still work while facing it (bug 2026-09-07: the oversized panel reached the crosshair and swallowed every click) | |
+| S2-15 | 3 | Make 12 layers that do NOT stack (mixed shapes, or the same circle at the same Y via Duplicate) and look at the projector | At most 8 layer lines, then "… and 4 more layers (12 in all)". Clicks still reach the world | |
 
 ## §3 — Centre model
 
@@ -426,6 +428,39 @@ Run top to bottom; later rows reuse earlier state where noted. Hotkey names (Pag
 | S10D-24 | v2-1 | Back up `ModConfig/shapeprojector.json`, delete it, restart, open the fresh file | Regenerated with `"maxLayersPerProjector": 48` — the §7 default as raised by §10d ("default raised 8 → 48"). This supersedes the old value 8 in S7-01/S4-10; S4-11's set-cap-to-3 test is unchanged | |
 | S10D-25 | v2-1 | While running everything above, read the whole GUI once more | **No controls beyond what §10a/§10d (and any built §10b/§10c) specify.** Triangle, Add Layer Up, Add Layer Out, Global ±1 are in scope; anything else new gets flagged under S10-07 — rejected however nice it is | |
 | S10D-26 | every | Standing rule, not a step: if anyone cites the §11 compat matrix / version sweep as evidence for ANY row in S10A or S10D | Rejected. The headless harness never executes the GUI, hotkeys, or renderer (spec §11: "the gates must never be cited as evidence for it"). The only evidence is this manual pass | |
+
+## 2026-09-07 user requests — opacity, hologram-only, surroundings model, fill, solid thickness (run now)
+
+Not in the spec; user requests recorded in docs/STATUS.md ruling 9f. Client-half only — nothing here is provable by the harness.
+
+| ID | Step | Do this | Expect | Result |
+|---|---|---|---|---|
+| U07-01 | 3 | Projector group: set "Mark opacity %" to 100, Apply; then 5, Apply; then 43 | World marks go opaque, then barely visible, then back to the original look. The hologram looks the same at all three | |
+| U07-02 | 3 | Set opacity to 100 on a layer with build feedback; fill one of its blocks | The filled mark is green at the same opacity as its neighbours | |
+| U07-03 | 3 | Look through a hill at a mark (see-through) at opacity 100 and at 20 | The buried reveal follows the opacity too (it is dimmer than the open-view mark at every setting) | |
+| U07-04 | 3 | Switch "World marks" OFF, Apply | No ghost cubes anywhere in the world; the hologram above the block still shows every figure; the emissive ring stays lit; "Show hologram" still hides the hologram on its own | |
+| U07-05 | 3 | With World marks OFF, switch "Projector on" OFF | Hologram gone too (master switch beats both). Back on: hologram returns, world still empty | |
+| U07-06 | 3 | Switch "Model surroundings" ON, radius 16, height 8, Apply (World marks ON) | The hologram now contains a miniature of the ground, walls, pits and buildings within 16 blocks and ±8 in height — land green, water surfaces blue — with the coloured figures in their true places among it. Nothing of the model appears in the world; the world marks are unchanged | |
+| U07-07 | 3 | With the model on, place and break a block inside the radius; then one outside it | Inside: the model updates within a tick. Outside: nothing changes | |
+| U07-08 | 3 | Model on, switch World marks OFF, then ON again | The grey model stays in the hologram both ways; only the world marks come and go | |
+| U07-09 | 3 | Model radius 64, height 32 on a built-up area | Block-exact and still usable; the log may report the model truncated at the cell budget — it must never freeze the client | |
+| U07-26 | 3 | Model radius 256, height 32; then place and break blocks near the projector | A coarse survey in 4-block tiles, framed on the projector; the client does not hitch per placement (the remodel follows about a third of a second after the last change) | |
+| U07-10 | 3 | Circle r=6, thickness 6 (the field's tooltip names the number for "solid"), Fixed Y at +1 over a pit ~6 deep; switch "Fill up to level" ON, Apply | A solid disc at +1 AND every block from the pit floor up to it, in the same colour, column by column. No fill where the ground is already at or above +1 | |
+| U07-11 | 3 | Fill one pit column with blocks up to the level | The fill marks in that column vanish as the ground rises under them; the disc mark on top turns green when its block is placed | |
+| U07-12 | 3 | Same layer, "Follow terrain" instead of Fixed Y, Fill ON | Fill from every column's ground up to the HIGHEST ground under the disc. Place a block on that highest column: the level climbs by one (expected — Follow terrain climbs; the tooltip says to pin with Fixed Y) | |
+| U07-13 | 3 | Fill ON over a pond, Fixed Y at bank level, fluid rule ON then OFF | ON: fill starts on the water surface (no marks in the water). OFF: fill starts at the pond bed — the water is full of marks | |
+| U07-14 | 3 | Fill ON, thickness 1 (an outline only) | Only the outline's columns are filled — a ring of pillars, not a solid — because fill follows the figure's columns | |
+| U07-15 | 3 | Type thickness 999 into a circle of radius 11 | The field clamps to 12 (the tooltip's "solid" number); the figure is a solid disc. Radius 3: clamps to 4. Ring 8–11: clamps to 4 | |
+| U07-16 | 3 | Break and re-place a projector carrying opacity 20, World marks OFF, model ON, a filled layer | Everything comes back exactly as set (item attributes carry the new fields); a 1.0.0 projector loads with opacity 43, marks ON, model OFF, no fill | |
+| U07-17 | 3 | Save a preset from a projector with a filled layer; load it into another | The loaded layer is filled | |
+| U07-18 | 3 | Layer settings: open the Colour dropdown; pick several entries, Apply after each | Every entry shows four squares in its own colour beside its hex code, and nothing draws outside the group box. Each pick updates the preview square beside "Hex code" and the hex text, and after Apply the layer's world marks AND its hologram cubes are that colour | |
+| U07-19 | 3 | Type #FF00FF in the layer's Hex code field (no entry is magenta), Apply | The preview square turns magenta, a "(custom)" magenta entry appears at the top of the list and is selected, the marks are magenta. Type #3CDC5A (the done green): the layer comes out one step off it, never identical to a built mark | |
+| U07-23 | 3 | Model on with a figure whose radius is larger than the model radius, and a centre offset | The projector's own cell sits at the horizontal middle of the miniature; the figure may run past the model's edge | |
+| U07-24 | 6 | Any layer at opacity 43; stand so a hill hides part of a mark | The buried part shows dimmed through the hill within the see-through depth (client-main.log must NOT contain "projectorghost shader failed to compile") | |
+| U07-25 | 3 | Model on; switch "Figures in hologram" OFF, Apply | The miniature shows only the land, buildings and water — no figures — framed on the projector; the world marks are unchanged. Back ON: figures return | |
+| U07-28 | 3 | Model on, block-exact radius (≤ 64), beside a tower or house whose roof overhangs its walls by a block; also a sealed room and a room with an open doorway | The walls under the eaves show in the miniature all the way down; the sealed room's inside is NOT drawn; through the open doorway the room's inner walls show. A hollow tower shows its sides, not a solid block | |
+| U07-22 | 3 | Model on, radius covering a pond or lake | The water shows as one flat sheet of blue cells at its surface; the bed is not modelled; the shore shows as a drop in the ground's own colours beside it. Ice is not water here (it shows as nothing if it has no collision box in the solid layer) | |
+| U07-21 | 3 | Load a preset saved by 1.0.0; place a 1.0.0-era projector item | Old layers show their old colours (cyan/amber/violet…) and the matching list entry is selected | |
 
 ## §10 — Out of scope: these must NOT be present (now spec §12 after the v2 renumbering; IDs kept)
 

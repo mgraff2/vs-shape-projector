@@ -2,6 +2,55 @@
 
 All notable changes to Jonastech Shape Projector.
 
+## 1.1.0 — 2026-09-07
+
+### Added
+
+- **Mark opacity.** Each projector has a slider-style setting, 5 to 100 percent, for how solid
+  its marks look out in the world. The hologram keeps its own contrast whatever you choose.
+- **World marks switch.** Turn the full-size marks off while the hologram above the projector
+  keeps showing every figure. A projector can now be hologram-only.
+- **Model surroundings.** The hologram can also show what is already standing around the
+  projector, within a radius (up to 256) and height you set, with the coloured figures drawn in
+  their true places among it. Beyond a radius of 64 the model is sampled coarser, in wider tiles,
+  so a large radius stays quick. Every block in the model wears its real colour: grass green,
+  stone grey, water blue, your own timber and brick as they are. Buildings appear as they
+  are seen from outside: roofs, walls with their doorways and windows, and the walls beneath
+  eaves and overhangs, but never the inside of a closed room. Land is green and water surfaces are blue by default, and each has its own
+  colour picker. A model of your home and of the work at once. It lives in the hologram only,
+  whether the world marks are on or off.
+- **Figures in hologram switch.** Hide the figures inside the hologram while the surroundings
+  model stays, and the miniature becomes a survey of the land alone.
+- **Fill up to level.** A layer can mark every block from the ground up to its level under each
+  column of the figure. A pit under a platform shows exactly the fill it needs, and with the
+  fluid rule off the fill starts at the lake bed, for a causeway. In Follow terrain the level is
+  the highest ground under the figure, so the whole figure levels up to its highest point.
+- **Colour picker.** A layer's colour is now chosen from a list of twenty-four colours, each
+  entry showing the colour itself beside its hex code. Beside it a hex field takes an exact code
+  and a preview square always shows the colour in use.
+  Older projectors and presets keep their colours.
+- **Thickness up to the radius.** A figure's thickness now runs all the way to its own radius, at
+  which point it is solid: a disc, a filled square, a filled polygon. The field tells you the
+  number that means solid for the figure you are editing.
+
+### Fixed
+
+- **A tall stack of layers no longer locks you out of the projector.** Looking at a projector
+  with many layers (a forty-eight-course tower, say) used to raise an info panel so tall it ran
+  off the screen and swallowed every click, so you could neither open the dial nor use a tool
+  while facing it. The panel now folds identical courses into one line ("Layers 1–48: Circle,
+  radius r=5, Y offset 0 to 47") and shows at most eight lines, with "… and N more layers" for
+  the rest. The dial itself still lists every layer.
+- **Seeing marks through the ground works now.** The through-terrain reveal had never
+  actually switched on: its shader failed to compile on every client, quietly, because of two
+  typographic dashes in its comments. Buried marks within the see-through depth now show, dimmed.
+- **The surroundings model is centred on the projector.** Figures reaching past the model's
+  radius, or an unloaded edge, no longer push the projector off the middle of the miniature.
+- **Tall layers on water.** A Follow-terrain layer several blocks tall used to move only its
+  bottom course when the water under it changed. The whole layer now moves together.
+- **Build feedback on tall layers.** Filling a course above the bottom one of a tall Fixed-Y
+  layer now turns that mark green right away, not only after something else changed.
+
 ## 1.0.0 — 2026-09-02
 
 First release.

@@ -42,6 +42,60 @@ namespace ShapeProjector
 
         private const string KeyProjEnabled = "projenabled";
         private const string KeyHolo = "holoenabled";
+        // 2026-09-07 user requests: world-marks switch, ghost opacity, surroundings model, fill up to level.
+        private const string KeyWorldMarks = "worldmarks";
+        private const string KeyHoloFigures = "holofigures";
+        private const string KeyOpacity = "opacity";
+        private const string KeyTerrain = "terrainmap";
+        private const string KeyTerrainRadius = "terrainradius";
+        private const string KeyTerrainHeight = "terrainheight";
+        private const string KeyFill = "filltolevel";
+        // Colour picker (user request 2026-09-07): a dropdown whose every entry shows its colour AND
+        // its hex code, plus a hex field with a live preview square, for the selected layer. (First
+        // cut was the vanilla swatch grid; it lays itself out past the group inset, so the user asked
+        // for the dropdown. The surroundings model had land/water pickers for an hour; it wears the
+        // real block colours now and has none.)
+        private const string KeyColorPicker = "colorpick";
+        private const string KeyColorHex = "colorhex";
+        private const string KeyColorPreview = "colorprev";
+        /// <summary>Re-entrancy guard: a dropdown pick writes the hex field, whose change handler re-selects the dropdown.</summary>
+        private bool syncingColor;
+
+        /// <summary>
+        /// Dropdown entry for a colour: four squares drawn in the colour itself, then its hex code.
+        /// The dropdown's rows are GuiElementRichtext (GuiElementListMenu.cs:191 SetNewTextWithoutRecompose
+        /// → VtmlUtil.Richtextify), so the vanilla &lt;font color="#hex"&gt; VTML tag paints the squares —
+        /// the same tag vanilla's own UI strings use (game/lang/en.json). A colour is SEEN, never
+        /// just named or coded (user, 2026-09-07).
+        /// </summary>
+        private static string ColorEntryName(int rgb, bool custom)
+        {
+            string hex = GhostPalette.ToHex(rgb);
+            return "<font color=\"" + hex + "\">" + "■■■■" + "</font>  " + hex + (custom ? " " + Lang.Get("shapeprojector:gui-color-custom") : "");
+        }
+
+        /// <summary>
+        /// The dropdown's list for a current colour: every swatch, with the current colour prepended
+        /// as a "custom" entry when it is not one of them (typed in the hex field). Values are hex codes.
+        /// </summary>
+        private static (string[] values, string[] names, int index) ColorList(int rgb)
+        {
+            int at = GhostPalette.SwatchIndexOf(rgb);
+            int extra = at < 0 ? 1 : 0;
+            string[] values = new string[GhostPalette.Swatches.Length + extra];
+            string[] names = new string[values.Length];
+            if (extra == 1)
+            {
+                values[0] = GhostPalette.ToHex(rgb);
+                names[0] = ColorEntryName(rgb, custom: true);
+            }
+            for (int i = 0; i < GhostPalette.Swatches.Length; i++)
+            {
+                values[i + extra] = GhostPalette.ToHex(GhostPalette.Swatches[i]);
+                names[i + extra] = ColorEntryName(GhostPalette.Swatches[i], custom: false);
+            }
+            return (values, names, at < 0 ? 0 : at);
+        }
         private const string KeyThickness = "thickness";
         private const string KeyHeight = "height";
         private const string KeyAdjust = "adjustreport";
@@ -151,6 +205,9 @@ namespace ShapeProjector
 
             bool atCap = edit.Layers.Count >= be.Config.maxLayersPerProjector;
             bool drape = layer.VerticalMode == VerticalMode.Drape;
+            // Fill up to level (2026-09-07) resolves the ground in BOTH vertical modes, so the fluid
+            // rule row appears whenever it is on, next to the build-feedback row Fixed Y already has.
+            bool fill = layer.FillToLevel;
             // §10d: Out is disabled where "out" has no honest meaning — the Geometer's IsAdjustable
             // (false exactly for spirals) drives it.
             bool outAdjustable = layer.ToShapeSpec() is ShapeSpec radialSpec && RadialAdjust.IsAdjustable(radialSpec);
@@ -168,13 +225,6 @@ namespace ShapeProjector
             string[] shapeValues = { "circle", "ring", "ellipse", "rectangle", "polygon", "triangle", "spiral" };
             string[] shapeNames = new string[shapeValues.Length];
             for (int i = 0; i < shapeValues.Length; i++) shapeNames[i] = Lang.Get("shapeprojector:gui-shape-" + shapeValues[i]);
-            string[] colorValues = new string[GhostPalette.Entries.Length];
-            string[] colorNames = new string[GhostPalette.Entries.Length];
-            for (int i = 0; i < GhostPalette.Entries.Length; i++)
-            {
-                colorValues[i] = GhostPalette.Entries[i].Code;
-                colorNames[i] = Lang.Get("shapeprojector:gui-color-" + GhostPalette.Entries[i].Code);
-            }
             string[] presetValues = presets.SortedNames();
             bool anyPresets = presetValues.Length > 0;
             string[] presetNames;
@@ -234,11 +284,41 @@ namespace ShapeProjector
             void Tip(ElementBounds b, string titleKey, string body) =>
                 c.AddHoverText(Lang.Get(titleKey) + "\n" + body, CairoFont.WhiteDetailText(), tipW, b);
 
+            // Colour picker block (user request 2026-09-07: colours must be SEEN, never just named or
+            // coded): a label + dropdown whose entries each show their colour and hex code (ColorList),
+            // then a "Hex code" row whose text field is for exact values and whose square beside it
+            // always shows the current colour — typed or picked — as a colour. Two rows; stays inside
+            // the group inset like every other row. Returns the y after the block.
+            // AddDropDown(values, names, selectedIndex, SelectionChangedDelegate, bounds, key) — §h.2;
+            // AddDynamicCustomDraw(bounds, DrawDelegateWithBounds, key) + GuiElementCustomDraw.Redraw()
+            // for the preview square (GuiComposerHelpers.cs:1300, 1309).
+            double ColorBlock(double x, double w, double y, string labelKey, string tipKey, string pickerKey, string hexKey, string previewKey,
+                              SelectionChangedDelegate onPick, Action<string> onHex, System.Func<int> current)
+            {
+                var (cvalues, cnames, cindex) = ColorList(current());
+                c.AddStaticText(Lang.Get(labelKey), CairoFont.WhiteSmallText(), L(x, y))
+                 .AddDropDown(cvalues, cnames, cindex, onPick, I(x, w, y), pickerKey);
+                Tip(Rowb(x, w, y), labelKey, Lang.Get(tipKey));
+                y += rowH + gap;
+                c.AddStaticText(Lang.Get("shapeprojector:gui-color-hex"), CairoFont.WhiteSmallText(), L(x, y));
+                c.AddTextInput(ElementBounds.Fixed(x + pad + labelW, y, w - 2 * pad - labelW - rowH - 6, rowH), onHex, CairoFont.WhiteDetailText(), hexKey);
+                c.AddDynamicCustomDraw(ElementBounds.Fixed(x + w - pad - rowH, y, rowH, rowH), (ctx, surface, b) =>
+                {
+                    int rgb = current();
+                    ctx.SetSourceRGBA(((rgb >> 16) & 0xFF) / 255.0, ((rgb >> 8) & 0xFF) / 255.0, (rgb & 0xFF) / 255.0, 1.0);
+                    GuiElement.RoundRectangle(ctx, b.drawX, b.drawY, b.InnerWidth, b.InnerHeight, 3.0);
+                    ctx.Fill();
+                }, previewKey);
+                Tip(Rowb(x, w, y), "shapeprojector:gui-color-hex", Lang.Get("shapeprojector:gui-tip-color-hex"));
+                return y + rowH + gap;
+            }
+
             // ================= LEFT column =================
             double yL = 30;
 
             // --- Projector (spec §10e: on/off, resolved center, offsets)
-            double cy = Group("shapeprojector:gui-group-projector", colLx, colLw, yL, 5 * rowH + 4 * gap);
+            // 11 plain rows: on, hologram, figures, world marks, opacity, model, radius, height, centre, dx, dz.
+            double cy = Group("shapeprojector:gui-group-projector", colLx, colLw, yL, 11 * rowH + 10 * gap);
             c.AddStaticText(Lang.Get("shapeprojector:gui-projector-enabled"), CairoFont.WhiteSmallText(), L(colLx, cy))
              .AddSwitch(null, ElementBounds.Fixed(colLx + pad + labelW, cy, rowH, rowH), KeyProjEnabled, 25, 3);
             Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-projector-enabled", Lang.Get("shapeprojector:gui-tip-projenabled"));
@@ -247,6 +327,31 @@ namespace ShapeProjector
             c.AddStaticText(Lang.Get("shapeprojector:gui-hologram-enabled"), CairoFont.WhiteSmallText(), L(colLx, cy))
              .AddSwitch(null, ElementBounds.Fixed(colLx + pad + labelW, cy, rowH, rowH), KeyHolo, 25, 3);
             Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-hologram-enabled", Lang.Get("shapeprojector:gui-tip-holoenabled"));
+            cy += rowH + gap;
+            c.AddStaticText(Lang.Get("shapeprojector:gui-hologram-figures"), CairoFont.WhiteSmallText(), L(colLx, cy))
+             .AddSwitch(null, ElementBounds.Fixed(colLx + pad + labelW, cy, rowH, rowH), KeyHoloFigures, 25, 3);
+            Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-hologram-figures", Lang.Get("shapeprojector:gui-tip-holofigures"));
+            cy += rowH + gap;
+            // --- 2026-09-07: world marks on/off (hologram-only mode), ghost opacity, surroundings model.
+            c.AddStaticText(Lang.Get("shapeprojector:gui-worldmarks-enabled"), CairoFont.WhiteSmallText(), L(colLx, cy))
+             .AddSwitch(OnWorldMarksToggled, ElementBounds.Fixed(colLx + pad + labelW, cy, rowH, rowH), KeyWorldMarks, 25, 3);
+            Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-worldmarks-enabled", Lang.Get("shapeprojector:gui-tip-worldmarks"));
+            cy += rowH + gap;
+            c.AddStaticText(Lang.Get("shapeprojector:gui-opacity"), CairoFont.WhiteSmallText(), L(colLx, cy))
+             .AddNumberInput(I(colLx, colLw, cy), OnOffsetChanged, CairoFont.WhiteDetailText(), KeyOpacity);
+            Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-opacity", Lang.Get("shapeprojector:gui-tip-opacity", ProjectorParams.MinOpacityPercent, GhostPalette.DefaultOpacityPercent));
+            cy += rowH + gap;
+            c.AddStaticText(Lang.Get("shapeprojector:gui-terrainmap"), CairoFont.WhiteSmallText(), L(colLx, cy))
+             .AddSwitch(null, ElementBounds.Fixed(colLx + pad + labelW, cy, rowH, rowH), KeyTerrain, 25, 3);
+            Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-terrainmap", Lang.Get("shapeprojector:gui-tip-terrainmap"));
+            cy += rowH + gap;
+            c.AddStaticText(Lang.Get("shapeprojector:gui-terrainmap-radius"), CairoFont.WhiteSmallText(), L(colLx, cy))
+             .AddNumberInput(I(colLx, colLw, cy), OnOffsetChanged, CairoFont.WhiteDetailText(), KeyTerrainRadius);
+            Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-terrainmap-radius", Lang.Get("shapeprojector:gui-tip-terrainmap-radius", be.Config.maxTerrainMapRadius));
+            cy += rowH + gap;
+            c.AddStaticText(Lang.Get("shapeprojector:gui-terrainmap-height"), CairoFont.WhiteSmallText(), L(colLx, cy))
+             .AddNumberInput(I(colLx, colLw, cy), OnOffsetChanged, CairoFont.WhiteDetailText(), KeyTerrainHeight);
+            Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-terrainmap-height", Lang.Get("shapeprojector:gui-tip-terrainmap-height", be.Config.maxTerrainMapHeight));
             cy += rowH + gap;
             c.AddDynamicText(ResolvedCenterText(edit), CairoFont.WhiteSmallText(), ElementBounds.Fixed(colLx + pad, cy, colLw - 2 * pad, rowH), KeyCenter);
             Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-center", Lang.Get("shapeprojector:gui-tip-center"));
@@ -361,8 +466,11 @@ namespace ShapeProjector
                 ShapeType.Spiral => 4,      // + direction dropdown
                 _ => 1,
             };
-            // shape row + shape fields + thickness/yoffset/height/vmode/opt/color/enabled
-            int settingsRows = 1 + shapeRows + 7;
+            // shape row + shape fields + thickness/yoffset/height/vmode/fill/color/enabled + the
+            // optional rows: fluid rule (Follow terrain, or any filled layer), build feedback (Fixed Y).
+            int optRows = (drape || fill ? 1 : 0) + (drape ? 0 : 1);
+            // The colour block is two rows (dropdown + hex), one more than the old colour dropdown.
+            int settingsRows = 1 + shapeRows + 7 + optRows + 1;
             cy = Group("shapeprojector:gui-group-layersettings", colRx, colRw, yR, settingsRows * rowH + (settingsRows - 1) * gap);
             c.AddStaticText(Lang.Get("shapeprojector:gui-shape"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddDropDown(shapeValues, shapeNames, ShapeDropdownIndex(layer), OnShapeChanged, I(colRx, colRw, cy), KeyShape);
@@ -421,7 +529,7 @@ namespace ShapeProjector
             // directly under the Y offset it extrudes upward from.
             c.AddStaticText(Lang.Get("shapeprojector:gui-thickness"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddNumberInput(I(colRx, colRw, cy), OnParamChanged, CairoFont.WhiteDetailText(), KeyThickness);
-            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-thickness", Lang.Get("shapeprojector:gui-tip-thickness"));
+            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-thickness", Lang.Get("shapeprojector:gui-tip-thickness", layer.MaxThickness(be.Config)));
             cy += rowH + gap;
             c.AddStaticText(Lang.Get("shapeprojector:gui-yoffset"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddNumberInput(I(colRx, colRw, cy), null, CairoFont.WhiteDetailText(), KeyYOffset);
@@ -435,25 +543,30 @@ namespace ShapeProjector
              .AddDropDown(vmodeValues, vmodeNames, drape ? 1 : 0, OnVerticalModeChanged, I(colRx, colRw, cy), KeyVMode);
             Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-verticalmode", Lang.Get("shapeprojector:gui-tip-verticalmode"));
             cy += rowH + gap;
-            // Mode-dependent switch row (always exactly one): Drape → fluid rule (spec §5a);
-            // Fixed Y → per-layer build feedback (spec §6 "Optional per-layer").
-            if (drape)
+            // Fill up to level (user request 2026-09-07). Toggling recomposes: the fluid-rule row
+            // depends on it.
+            c.AddStaticText(Lang.Get("shapeprojector:gui-fill"), CairoFont.WhiteSmallText(), L(colRx, cy))
+             .AddSwitch(OnFillToggled, ElementBounds.Fixed(colRx + pad + labelW, cy, rowH, rowH), KeyFill, 25, 3);
+            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-fill", Lang.Get(drape ? "shapeprojector:gui-tip-fill-drape" : "shapeprojector:gui-tip-fill-fixed"));
+            cy += rowH + gap;
+            // Optional rows: fluid rule where the ground is resolved (Follow terrain, spec §5a — and
+            // any filled layer, 2026-09-07); per-layer build feedback in Fixed Y (spec §6 "Optional per-layer").
+            if (drape || fill)
             {
                 c.AddStaticText(Lang.Get("shapeprojector:gui-treatfluidassurface"), CairoFont.WhiteSmallText(), L(colRx, cy))
                  .AddSwitch(null, ElementBounds.Fixed(colRx + pad + labelW, cy, rowH, rowH), KeyFluid, 25, 3);
-                Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-treatfluidassurface", Lang.Get("shapeprojector:gui-tip-fluid"));
+                Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-treatfluidassurface", Lang.Get(drape ? "shapeprojector:gui-tip-fluid" : "shapeprojector:gui-tip-fluid-fill"));
+                cy += rowH + gap;
             }
-            else
+            if (!drape)
             {
                 c.AddStaticText(Lang.Get("shapeprojector:gui-buildfeedback"), CairoFont.WhiteSmallText(), L(colRx, cy))
                  .AddSwitch(null, ElementBounds.Fixed(colRx + pad + labelW, cy, rowH, rowH), KeyFeedback, 25, 3);
                 Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-buildfeedback", Lang.Get("shapeprojector:gui-tip-buildfeedback"));
+                cy += rowH + gap;
             }
-            cy += rowH + gap;
-            c.AddStaticText(Lang.Get("shapeprojector:gui-color"), CairoFont.WhiteSmallText(), L(colRx, cy))
-             .AddDropDown(colorValues, colorNames, GhostPalette.ClampIndex(layer.ColorIndex), OnColorChanged, I(colRx, colRw, cy), KeyColor);
-            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-color", Lang.Get("shapeprojector:gui-tip-color"));
-            cy += rowH + gap;
+            cy = ColorBlock(colRx, colRw, cy, "shapeprojector:gui-color", "shapeprojector:gui-tip-color",
+                            KeyColorPicker, KeyColorHex, KeyColorPreview, OnLayerPick, OnLayerHex, () => edit.Layers[selected].ResolveColor());
             c.AddStaticText(Lang.Get("shapeprojector:gui-enabled"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddSwitch(null, ElementBounds.Fixed(colRx + pad + labelW, cy, rowH, rowH), KeyEnabled, 25, 3);
             Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-enabled", Lang.Get("shapeprojector:gui-tip-enabled"));
@@ -484,9 +597,20 @@ namespace ShapeProjector
             GuiElementNumberInput hgt = c.GetNumberInput(KeyHeight); hgt.Interval = 1f; hgt.IntMode = true; hgt.SetValue(layer.Height);
             c.GetSwitch(KeyProjEnabled).On = edit.Enabled;
             c.GetSwitch(KeyHolo).On = edit.HologramEnabled;
+            c.GetSwitch(KeyWorldMarks).On = edit.ProjectionEnabled;
+            c.GetSwitch(KeyHoloFigures).On = edit.HologramFigures;
+            GuiElementNumberInput opac = c.GetNumberInput(KeyOpacity); opac.Interval = 5f; opac.IntMode = true; opac.SetValue(edit.GhostOpacity);
+            c.GetSwitch(KeyTerrain).On = edit.TerrainMap;
+            GuiElementNumberInput tr = c.GetNumberInput(KeyTerrainRadius); tr.Interval = 1f; tr.IntMode = true; tr.SetValue(edit.TerrainMapRadius);
+            GuiElementNumberInput th = c.GetNumberInput(KeyTerrainHeight); th.Interval = 1f; th.IntMode = true; th.SetValue(edit.TerrainMapHeight);
             c.GetSwitch(KeyEnabled).On = layer.Enabled;
-            if (drape) c.GetSwitch(KeyFluid).On = layer.TreatFluidAsSurface;
-            else c.GetSwitch(KeyFeedback).On = layer.ShowBuildFeedback;
+            c.GetSwitch(KeyFill).On = layer.FillToLevel;
+            // Colour block: the dropdown was composed already selected (ColorList); fill the hex field.
+            syncingColor = true;
+            c.GetTextInput(KeyColorHex).SetValue(GhostPalette.ToHex(layer.ResolveColor()));
+            syncingColor = false;
+            if (drape || fill) c.GetSwitch(KeyFluid).On = layer.TreatFluidAsSurface;
+            if (!drape) c.GetSwitch(KeyFeedback).On = layer.ShowBuildFeedback;
 
             // Focus semantics only — the visual disable is the grayed font above (§p.6:
             // GetToggleButton, GuiComposerHelpers.cs:455-461; Enabled ⇒ Focusable, GuiElementToggleButton.cs:40).
@@ -620,6 +744,12 @@ namespace ShapeProjector
             // GuiElementNumberInput.GetValue() → float — §h.2 (GuiElementNumberInput.cs:57).
             p.Enabled = c.GetSwitch(KeyProjEnabled).On;
             p.HologramEnabled = c.GetSwitch(KeyHolo).On;
+            p.ProjectionEnabled = c.GetSwitch(KeyWorldMarks).On;
+            p.HologramFigures = c.GetSwitch(KeyHoloFigures).On;
+            p.GhostOpacity = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyOpacity).GetValue()), ProjectorParams.MinOpacityPercent, 100);
+            p.TerrainMap = c.GetSwitch(KeyTerrain).On;
+            p.TerrainMapRadius = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyTerrainRadius).GetValue()), 1, be.Config.maxTerrainMapRadius);
+            p.TerrainMapHeight = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyTerrainHeight).GetValue()), 1, be.Config.maxTerrainMapHeight);
             p.Dx = ProjectorParams.ToHalfStep(c.GetNumberInput(KeyDx).GetValue(), -max, max);
             p.Dz = ProjectorParams.ToHalfStep(c.GetNumberInput(KeyDz).GetValue(), -max, max);
 
@@ -657,8 +787,12 @@ namespace ShapeProjector
                     break;
             }
             layer.YOffset = (int)Math.Round(c.GetNumberInput(KeyYOffset).GetValue());
-            layer.Thickness = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyThickness).GetValue()), 1, be.Config.maxOutlineThickness);
+            // Thickness tops out at the figure's own extent (2026-09-07): the shape fields above were
+            // just read, so MaxThickness sees the current radius.
+            layer.Thickness = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyThickness).GetValue()), 1, layer.MaxThickness(be.Config));
             layer.Height = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyHeight).GetValue()), 1, be.Config.maxLayerHeight);
+            GuiElementSwitch? fillSw = c.GetSwitch(KeyFill);
+            if (fillSw != null) layer.FillToLevel = fillSw.On;
             // Vertical mode + fluid rule (spec §5a, step 5). GuiComposer.GetElement returns null for a missing
             // key (GuiComposer.cs:834-845, verified this session — api-notes "Renderer additions"), so the
             // Drape-only switch is read only when the dialog was composed with it.
@@ -669,7 +803,9 @@ namespace ShapeProjector
             GuiElementSwitch? fbSw = c.GetSwitch(KeyFeedback);
             if (fbSw != null) layer.ShowBuildFeedback = fbSw.On;
             layer.Enabled = c.GetSwitch(KeyEnabled).On;
-            layer.ColorIndex = GhostPalette.IndexOf(c.GetDropDown(KeyColor).SelectedValue);
+            // The hex field is the colour's source of truth (a dropdown pick writes it); an unparsable
+            // entry leaves the last good colour.
+            if (GhostPalette.TryParseHex(c.GetTextInput(KeyColorHex)?.GetText(), out int lrgb)) layer.ColorRgb = GhostPalette.SanitizeRgb(lrgb);
         }
 
         // ------------------------------------------------------------------ handlers
@@ -743,10 +879,64 @@ namespace ShapeProjector
             }
         }
 
-        private void OnColorChanged(string code, bool selectedFlag)
+        /// <summary>Fill up to level toggled: the fluid-rule row exists for a filled Fixed-Y layer only, so recompose (same reason as OnVerticalModeChanged).</summary>
+        private void OnFillToggled(bool on)
         {
             if (composing) return;
-            edit.Layers[selected].ColorIndex = GhostPalette.IndexOf(code);
+            ReadInputsInto(edit);
+            ComposeDialog();
+        }
+
+        /// <summary>World marks toggled: no rows depend on it — read it so a hotkey-driven Apply carries it.</summary>
+        private void OnWorldMarksToggled(bool on)
+        {
+            if (composing) return;
+            ReadInputsInto(edit);
+        }
+
+        // ---- Colour picker handlers (2026-09-07). A dropdown pick sets the colour and writes the hex
+        // field; a hex edit sets the colour and re-selects the dropdown (adding a "custom" entry when
+        // the colour is not a swatch); both repaint the preview square. The guard stops the two from
+        // feeding each other.
+        private void OnLayerPick(string code, bool selectedFlag)
+        {
+            if (composing || syncingColor) return;
+            if (!GhostPalette.TryParseHex(code, out int rgb)) return;
+            SetColor(GhostPalette.SanitizeRgb(rgb), KeyColorHex, KeyColorPicker, KeyColorPreview, v => edit.Layers[selected].ColorRgb = v);
+        }
+
+        private void OnLayerHex(string text)
+        {
+            if (composing || syncingColor) return;
+            if (!GhostPalette.TryParseHex(text, out int rgb)) return;
+            SetColor(GhostPalette.SanitizeRgb(rgb), null, KeyColorPicker, KeyColorPreview, v => edit.Layers[selected].ColorRgb = v);
+        }
+
+
+        /// <summary>Applies a colour to the model and to every control that shows it (hex field only when <paramref name="hexKey"/> is given — a typed hex must not be rewritten under the caret).</summary>
+        private void SetColor(int rgb, string? hexKey, string pickerKey, string previewKey, Action<int> store)
+        {
+            store(rgb);
+            if (SingleComposer == null) return;
+            syncingColor = true;
+            try
+            {
+                if (hexKey != null) SingleComposer.GetTextInput(hexKey).SetValue(GhostPalette.ToHex(rgb));
+                // Re-list the dropdown so a typed colour appears (and is selected) as its own entry.
+                // GuiElementDropDown.SetList(values, names) / SetSelectedIndex(int) — GuiElementDropDown.cs:416/395.
+                GuiElementDropDown? dd = SingleComposer.GetDropDown(pickerKey);
+                if (dd != null)
+                {
+                    var (values, names, index) = ColorList(rgb);
+                    dd.SetList(values, names);
+                    dd.SetSelectedIndex(index);
+                }
+                SingleComposer.GetCustomDraw(previewKey)?.Redraw();
+            }
+            finally
+            {
+                syncingColor = false;
+            }
         }
 
         private static LayerParams NewLayer()

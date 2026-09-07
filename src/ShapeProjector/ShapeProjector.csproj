@@ -43,6 +43,12 @@
       <HintPath>$(VINTAGE_STORY)\Lib\Newtonsoft.Json.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- cairo-sharp: the colour-preview square (GuiElementCustomDraw's DrawDelegateWithBounds hands
+         over a Cairo.Context) — the game's own copy in Lib\, never shipped (2026-09-07). -->
+    <Reference Include="cairo-sharp">
+      <HintPath>$(VINTAGE_STORY)\Lib\cairo-sharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
   <!--

@@ -17,7 +17,7 @@ namespace ShapeProjector
     /// layer's GhostPalette index, so the preview derives its bright/dim line colors from the palette
     /// instead of unpacking the world renderer's packed RGBA.
     /// </summary>
-    public readonly record struct PreviewSegment(int LayerIndex, int CellStart, int Count, int ColorIndex);
+    public readonly record struct PreviewSegment(int LayerIndex, int CellStart, int Count, int ColorIndex, int Footprint = 1);
 
     /// <summary>
     /// Block entity: the projector's parameter store (spec §2, §8). The server owns the parameters;
@@ -79,6 +79,18 @@ namespace ShapeProjector
             public int Columns;
             /// <summary>Done tint active for this layer (spec §6, step 6): Fixed-Y only, config + per-layer gated.</summary>
             public bool Feedback;
+            /// <summary>
+            /// Fill up to level (user request 2026-09-07). A filled layer's columns have DIFFERENT cell
+            /// counts, so the Height stride above does not apply: column j's cells are
+            /// cells[CellStart + ColStart[j] .. CellStart + ColStart[j+1]) and ColBase[j] is the base the
+            /// column was resolved with (null = unloaded), kept so the fluid re-sample can tell whether
+            /// anything moved. Any change under a filled layer is a full cell rebuild — the runs can
+            /// change length, which no in-place patch can express.
+            /// </summary>
+            public bool Fill;
+            public int Level;
+            public int[]? ColStart;
+            public int?[]? ColBase;
         }
 
         private readonly List<LayerRender> layerRenders = new List<LayerRender>();
@@ -108,9 +120,31 @@ namespace ShapeProjector
         private bool resolveFluidAsSurface;               // per-layer flag read by SurfaceHeightAt
         private bool anyDrapeLayer;
         private bool anyFeedbackLayer;
+        private bool anyFillLayer;
         private bool blockChangedSubscribed;
         private bool patchQueued;
+        /// <summary>Set by a block change under a filled layer: the next patch tick rebuilds every cell instead of patching columns.</summary>
+        private bool fullRebuildQueued;
+        /// <summary>
+        /// A block change inside the surroundings model's box remodels it — but a few hundred ms
+        /// later, coalescing a run of placements into one rescan (at radius 256 a rescan is the
+        /// whole sampled box; per placement it would hitch, user request "see 256 in action").
+        /// </summary>
+        private bool terrainRebuildQueued;
+        private const int TerrainRebuildDelayMs = 300;
         private long resampleListenerId;
+        private static readonly List<GhostCell> NoCells = new List<GhostCell>();
+        /// <summary>The surroundings model is built (user request 2026-09-07): projector on and the model switched on, whatever the world marks do.</summary>
+        private bool TerrainModelActive => Params.Enabled && Params.TerrainMap;
+        /// <summary>
+        /// How many leading cells belong to the layers. The surroundings model is appended AFTER them,
+        /// so the world renderer takes exactly this prefix and never draws the model in the world; the
+        /// hologram reads the whole list. Column patches only touch layer indices, so the prefix stays
+        /// valid between rebuilds.
+        /// </summary>
+        private int worldCellCount;
+        /// <summary>The done tint at the opacity of the current build — the column patch must paint the same green the rebuild did.</summary>
+        private int doneColorNow = GhostPalette.DoneColor;
 
         // public virtual void Initialize(ICoreAPI api) — api-notes §c.3 (BlockEntity.cs:132).
         // "called right after the block entity was spawned or right after it was loaded from a
@@ -427,10 +461,15 @@ namespace ShapeProjector
                 anyFeedbackLayer = false;
                 UpdateResampleListener();
                 PreviewMarkerVisible = false;
-                renderer.SetCells(cells);
+                PushCells();
                 PreviewCellsChanged?.Invoke();   // §10c: preview follows the same (now empty) cache
                 return;
             }
+
+            // Ghost opacity (user request 2026-09-07): baked into every vertex colour of this build.
+            int alpha = GhostPalette.AlphaFor(Params.GhostOpacity);
+            int doneColor = GhostPalette.DoneColorAt(alpha);
+            doneColorNow = doneColor;
 
             for (int i = 0; i < Params.Layers.Count; i++)
             {
@@ -461,7 +500,7 @@ namespace ShapeProjector
                     Mode = layer.VerticalMode,
                     FluidSurface = layer.TreatFluidAsSurface,
                     YOffset = layer.YOffset,
-                    Color = GhostPalette.Color(layer.ColorIndex),
+                    Color = GhostPalette.Pack(layer.ResolveColor(), alpha),   // colour picker (2026-09-07): any RGB
                     Height = Math.Max(1, layer.Height),
                     CellStart = cells.Count,
                     // Done tint (spec §6 "Optional per-layer", step-6 ruling): Fixed-Y layers only — a
@@ -483,6 +522,13 @@ namespace ShapeProjector
                 // columns are: a shorter closed figure still reads as the shape, a half-drawn ring does not.
                 int room = Math.Max(0, Config.maxCellsPerProjector - cells.Count);
                 int columns = geom.Positions.Count;
+
+                if (layer.FillToLevel)
+                {
+                    AppendFilledLayer(i, layer, lr, room, doneColor);
+                    continue;
+                }
+
                 if (columns > 0 && (long)columns * lr.Height > room)
                 {
                     int fitHeight = Math.Max(1, room / columns);
@@ -512,7 +558,7 @@ namespace ShapeProjector
                         // Initial occupancy scan (spec §6): a Fixed-Y cell already filled by a qualifying
                         // block starts green. Every level is tested on its own — a half-built wall shows
                         // exactly how far up it is done.
-                        int cellColor = lr.Feedback && IsCellOccupied(r.X, y, r.Z) ? GhostPalette.DoneColor : lr.Color;
+                        int cellColor = lr.Feedback && IsCellOccupied(r.X, y, r.Z) ? doneColor : lr.Color;
                         cells.Add(new GhostCell(r.X, y, r.Z, cellColor));
                     }
                 }
@@ -524,12 +570,20 @@ namespace ShapeProjector
 
             anyDrapeLayer = false;
             anyFeedbackLayer = false;
+            anyFillLayer = false;
             foreach (LayerRender lr in layerRenders)
             {
                 if (lr.Mode == VerticalMode.Drape) anyDrapeLayer = true;
                 if (lr.Feedback) anyFeedbackLayer = true;
+                if (lr.Fill) anyFillLayer = true;
             }
             UpdateResampleListener();
+
+            // Surroundings model (user request 2026-09-07): appended after every layer's cells into the
+            // same cache the hologram reads; the world renderer gets only the prefix before it
+            // (PushCells), so the model shows in the hologram with the world marks on or off.
+            worldCellCount = cells.Count;
+            if (TerrainModelActive) AppendTerrainModel();
 
             // Resolved fractional centre (projector position + dx/dz, spec §3). No world-space marker
             // cube any more (user ruling 10, docs/STATUS.md — it collided visually with the hologram);
@@ -539,8 +593,313 @@ namespace ShapeProjector
             PreviewMarkerY = 1.5;
             PreviewMarkerZ = 0.5 + Params.Dz;
 
-            renderer.SetCells(cells);
+            PushCells();
             PreviewCellsChanged?.Invoke();   // §10c: same cache, same moment, event-driven
+        }
+
+        /// <summary>
+        /// Hands the cell cache to the world renderer — or nothing at all while the per-projector
+        /// world-marks switch is off (user request 2026-09-07, "hologram only"): the hologram keeps
+        /// reading PreviewCells, the world draws no ghost cubes and uploads no mesh.
+        /// </summary>
+        private void PushCells()
+        {
+            if (renderer == null) return;
+            if (!Params.ProjectionEnabled) { renderer.SetCells(NoCells); return; }
+            // The layer prefix only — the surroundings model behind it is hologram-only geometry.
+            renderer.SetCells(worldCellCount == cells.Count ? cells : cells.GetRange(0, worldCellCount));
+        }
+
+        /// <summary>
+        /// Fill up to level (user request 2026-09-07) for one enabled layer: every outline column is
+        /// resolved to its ground (the same callback and fluid rule as draping), the level is the
+        /// layer's Y (Fixed Y) or the highest ground under the figure (Follow terrain), and each column
+        /// gets the LevelFill run from its ground up to the level plus the layer's Height on top. The
+        /// arithmetic and the budget fit are the Geometry library's (LevelFill.cs); this only reads
+        /// the world and emits cells. Done tint applies as for any Fixed-Y layer — the fill cells sit
+        /// above the ground by construction, so they turn green one by one as the pit is filled and
+        /// the ground rises under them (each placement is a full rebuild, see OnClientBlockChanged).
+        /// </summary>
+        private void AppendFilledLayer(int index, LayerParams layer, LayerRender lr, int room, int doneColor)
+        {
+            IReadOnlyList<BlockXZ> positions = lr.Geom.Positions;
+            int columns = positions.Count;
+            bool drape = lr.Mode == VerticalMode.Drape;
+
+            resolveFluidAsSurface = lr.FluidSurface;
+            int?[] bases = new int?[columns];
+            for (int j = 0; j < columns; j++)
+            {
+                int? surface = SurfaceHeightAt(positions[j].X, positions[j].Z);
+                // Same base as DrapeResolver.ResolveColumn: surface + 1, plus the layer offset when draping.
+                bases[j] = surface.HasValue ? surface.Value + 1 + (drape ? lr.YOffset : 0) : null;
+            }
+            int level = drape ? (LevelFill.HighestBase(bases) ?? lr.YOffset) : lr.YOffset;
+
+            var (fitHeight, fitColumns) = LevelFill.Fit(bases, level, lr.Height, room);
+            if (fitHeight != lr.Height || fitColumns != columns)
+            {
+                Api.Logger.Warning(
+                    "[shapeprojector] Filled layer {0} at {1} exceeds the {2}-cell budget ({3} columns, level {4}, height {5}); drawing height {6} over {7} columns.",
+                    index, Pos, Config.maxCellsPerProjector, columns, level, lr.Height, fitHeight, fitColumns);
+            }
+
+            lr.Fill = true;
+            lr.Level = level;
+            lr.Height = fitHeight;
+            lr.ColBase = bases;
+            lr.ColStart = new int[fitColumns + 1];
+            for (int j = 0; j < fitColumns; j++)
+            {
+                lr.ColStart[j] = cells.Count - lr.CellStart;
+                var (start, count) = LevelFill.ColumnRun(bases[j], level, fitHeight);
+                int x = positions[j].X, z = positions[j].Z;
+                for (int k = 0; k < count; k++)
+                {
+                    int y = start + k;
+                    int cellColor = lr.Feedback && IsCellOccupied(x, y, z) ? doneColor : lr.Color;
+                    cells.Add(new GhostCell(x, y, z, cellColor));
+                }
+            }
+            lr.ColStart[fitColumns] = cells.Count - lr.CellStart;
+            lr.Columns = fitColumns;
+            previewSegments.Add(new PreviewSegment(index, lr.CellStart, cells.Count - lr.CellStart, GhostPalette.ClampIndex(layer.ColorIndex)));
+        }
+
+        /// <summary>
+        /// Surroundings model (user request 2026-09-07, "a model of your home and work"): the standing
+        /// blocks around the projector as grey cells in the hologram's cache — one segment with
+        /// LayerIndex -1, after every layer's cells so the world renderer's prefix excludes it. Per column within TerrainMapRadius the topmost solid block (the same "solid"
+        /// as the done tint: non-fluid with a collision box, IsCellOccupied) inside the ±TerrainMapHeight
+        /// window, plus the exposed face of any drop to a lower neighbour column, so walls, cliffs and
+        /// pits show their sides and not just their rims; then (block-exact models) every solid block the
+        /// OUTSIDE AIR below the rain map touches — walls under eaves and overhangs, the underside of a
+        /// porch, a cliff's undercut — found by flood-filling that air from where it meets a lower
+        /// neighbour's sky. Sealed interiors are never reached, so they are never drawn: it is a model
+        /// seen from outside. Column scans start at the rain map height (GetRainMapHeightAt,
+        /// api-notes §g.3 — nothing solid stands above it), so open ground costs one read per column.
+        /// Water surfaces (user request 2026-09-07): the rain map counts water as surface, so when the
+        /// fluid-layer block at the rain height IsLiquid() (the §g.3 lookup SurfaceHeightAt uses) that
+        /// cell is the column's top, drawn in the projector's water colour; the bed beneath is not
+        /// modelled — a lake reads as its surface, in blue. Land is drawn in the land colour.
+        /// Capped by the projector's cell budget like any layer; the hologram decimates past its own.
+        /// </summary>
+        private void AppendTerrainModel()
+        {
+            int r = Params.TerrainMapRadius;
+            int h = Params.TerrainMapHeight;
+            // Sampling (config terrainModelMaxSpan): past that many columns per axis the model reads
+            // every step-th column and draws each as a step-wide tile (PreviewSegment.Footprint), so
+            // cost is flat in the radius. Radius 64 → step 1 (block-exact); radius 256 → step 4.
+            int span = 2 * r + 1;
+            int step = Math.Max(1, (span + Config.terrainModelMaxSpan - 1) / Config.terrainModelMaxSpan);
+            int size = (span + step - 1) / step;   // sampled columns per axis; sample i sits at -r + i*step
+            int levels = 2 * h + 1;
+            const int None = int.MinValue;
+            int[] top = new int[size * size];       // topmost solid (or water surface) inside the window
+            int[] rainTop = new int[size * size];   // rain-map top: everything above it in the column is sky
+            bool[] water = new bool[size * size];
+
+            IBlockAccessor ba = Api.World.BlockAccessor;
+            BlockPos fp = scratchPos ??= Pos.Copy();   // keeps Pos.dimension; mutated in place
+            for (int iz = 0; iz < size; iz++)
+            {
+                for (int ix = 0; ix < size; ix++)
+                {
+                    int dx = -r + ix * step, dz = -r + iz * step;
+                    int found = None;
+                    int rainY = None;
+                    bool isWater = false;
+                    int rain = ba.GetRainMapHeightAt(Pos.X + dx, Pos.Z + dz);
+                    if (rain > 0)
+                    {
+                        rainY = rain - Pos.Y;
+                        if (rainY <= h && rainY >= -h)
+                        {
+                            // Block GetBlock(BlockPos, int layer) — IBlockAccessor.cs:119; BlockLayersAccess.Fluid = 2;
+                            // CollectibleObject.IsLiquid() — CollectibleObject.cs:3291 (api-notes §g.3).
+                            fp.X = Pos.X + dx; fp.Y = rain; fp.Z = Pos.Z + dz;
+                            if (ba.GetBlock(fp, BlockLayersAccess.Fluid).IsLiquid()) { found = rainY; isWater = true; }
+                        }
+                        if (found == None)
+                        {
+                            int yTop = Math.Min(h, rainY);
+                            for (int y = yTop; y >= -h; y--)
+                            {
+                                if (IsCellOccupied(dx, y, dz)) { found = y; break; }
+                            }
+                        }
+                    }
+                    top[iz * size + ix] = found;
+                    rainTop[iz * size + ix] = rainY;
+                    water[iz * size + ix] = isWater;
+                }
+            }
+
+            int room = Math.Max(0, Config.maxCellsPerProjector - cells.Count);
+            int start = cells.Count;
+            bool truncated = false;
+            // Real block colours (user, 2026-09-07; the only colouring since the land/water pickers were
+            // retired the same day): Block.GetColor(ICoreClientAPI, BlockPos) — Block.cs:2632 — the atlas
+            // average of the block's texture (TextureAtlasManager.cs:397: ColorAverage then
+            // ReverseColorBytes, so red sits in the low byte exactly as ColorFromRgba packs it) with the
+            // climate/season tint applied for that position. -1 (no texture) reads as white. Only the
+            // alpha is replaced (the hologram sets its own anyway).
+            ICoreClientAPI tcapi = (ICoreClientAPI)Api;   // the model is built on the client only
+            int BlockColor(int cx, int cy, int cz, int layerAccess)
+            {
+                BlockPos bp = scratchPos ??= Pos.Copy();
+                bp.X = Pos.X + cx; bp.Y = Pos.Y + cy; bp.Z = Pos.Z + cz;
+                int c = ba.GetBlock(bp, layerAccess).GetColor(tcapi, bp);
+                return (c & 0xFFFFFF) | (GhostPalette.Alpha << 24);
+            }
+            // One bit per cell of the (sampled) box: emitted once, whichever pass reaches it first.
+            bool[] emitted = new bool[size * size * levels];
+            int Index(int ix, int iz, int y) => ((y + h) * size + iz) * size + ix;
+            bool Emit(int ix, int iz, int y, bool isWater)
+            {
+                int idx = Index(ix, iz, y);
+                if (emitted[idx]) return true;
+                if (cells.Count - start >= room) { truncated = true; return false; }
+                emitted[idx] = true;
+                int dx = -r + ix * step, dz = -r + iz * step;
+                cells.Add(new GhostCell(dx, y, dz, BlockColor(dx, y, dz, isWater ? BlockLayersAccess.Fluid : BlockLayersAccess.SolidBlocks)));
+                return true;
+            }
+
+            // ---- Pass 1: what the sky sees. Each column's top, and the wall down to where its lower
+            // neighbours' tops are — the faces that look up at open sky.
+            for (int iz = 0; iz < size && !truncated; iz++)
+            {
+                for (int ix = 0; ix < size; ix++)
+                {
+                    int t = top[iz * size + ix];
+                    if (t == None) continue;
+                    // A water column is its surface only: one cell, no walls down (the shore's own
+                    // drop is drawn by the land column beside it).
+                    if (water[iz * size + ix])
+                    {
+                        if (!Emit(ix, iz, t, isWater: true)) break;
+                        continue;
+                    }
+
+                    // Lowest cell to show: one above the lowest of the four neighbour tops (a neighbour
+                    // with nothing solid in the window counts as the window floor); outside the box
+                    // a neighbour is taken as level with this column, so the box edge grows no wall.
+                    int floor = t;
+                    Neighbour(ix - 1, iz, ref floor);
+                    Neighbour(ix + 1, iz, ref floor);
+                    Neighbour(ix, iz - 1, ref floor);
+                    Neighbour(ix, iz + 1, ref floor);
+
+                    int dx = -r + ix * step, dz = -r + iz * step;
+                    for (int y = t; y >= floor; y--)
+                    {
+                        // Below the top, read the block rather than assume a wall (user: "existing
+                        // buildings ... in the holographic model"): a doorway, a window or the open
+                        // space under a porch roof stays open in the model instead of filling in.
+                        if (y != t && !IsCellOccupied(dx, y, dz)) continue;
+                        if (!Emit(ix, iz, y, isWater: false)) break;
+                    }
+                    if (truncated) break;
+                }
+            }
+
+            // ---- Pass 2 (block-exact models only): what the sky does NOT see but the outside does.
+            // Under an eave, a porch roof, an overhang or a cliff lip the wall beneath is hidden from
+            // pass 1 because its neighbour's top IS the eave (user, 2026-09-07: "a tower doesn't show
+            // the sides"). So: flood-fill the OUTSIDE AIR that lies below the rain map — seeded where
+            // a column's below-rain air is side by side with a lower neighbour's sky — and draw every
+            // solid block that air touches. Sky itself is never walked (pass 1 already drew what it
+            // touches), sealed rooms are never entered (nothing connects them to outside air), and an
+            // open doorway is entered exactly as far as one could see in through it. Water blocks the
+            // fill; underwater cave walls are not modelled.
+            if (step == 1 && !truncated)
+            {
+                bool[] visited = new bool[size * size * levels];
+                Queue<(int ix, int iz, int y)> queue = new Queue<(int, int, int)>();
+
+                bool IsAir(int ix, int iz, int y)
+                {
+                    int dx = -r + ix, dz = -r + iz;
+                    if (IsCellOccupied(dx, y, dz)) return false;
+                    BlockPos bp = scratchPos ??= Pos.Copy();
+                    bp.X = Pos.X + dx; bp.Y = Pos.Y + y; bp.Z = Pos.Z + dz;
+                    return !ba.GetBlock(bp, BlockLayersAccess.Fluid).IsLiquid();
+                }
+                void Seed(int ix, int iz, int y)
+                {
+                    int idx = Index(ix, iz, y);
+                    if (visited[idx]) return;
+                    if (!IsAir(ix, iz, y)) return;
+                    visited[idx] = true;
+                    queue.Enqueue((ix, iz, y));
+                }
+                // Seeds: in column c, the air cells between a lower neighbour's rain top and c's own
+                // — they see that neighbour's sky sideways, so they are outside air.
+                for (int iz = 0; iz < size; iz++)
+                {
+                    for (int ix = 0; ix < size; ix++)
+                    {
+                        int rc = rainTop[iz * size + ix];
+                        if (rc == None) continue;
+                        SeedFrom(ix - 1, iz); SeedFrom(ix + 1, iz); SeedFrom(ix, iz - 1); SeedFrom(ix, iz + 1);
+                        void SeedFrom(int nix, int niz)
+                        {
+                            if (nix < 0 || nix >= size || niz < 0 || niz >= size) return;
+                            int rn = rainTop[niz * size + nix];
+                            if (rn == None || rn >= rc) return;
+                            int yLo = Math.Max(-h, rn + 1), yHi = Math.Min(h, rc);
+                            for (int y = yLo; y <= yHi; y++) Seed(ix, iz, y);
+                        }
+                    }
+                }
+
+                while (queue.Count > 0 && !truncated)
+                {
+                    var (ix, iz, y) = queue.Dequeue();
+                    Step(ix - 1, iz, y); Step(ix + 1, iz, y); Step(ix, iz - 1, y); Step(ix, iz + 1, y); Step(ix, iz, y - 1); Step(ix, iz, y + 1);
+                    void Step(int nix, int niz, int ny)
+                    {
+                        if (truncated) return;
+                        if (nix < 0 || nix >= size || niz < 0 || niz >= size || ny < -h || ny > h) return;
+                        int rn = rainTop[niz * size + nix];
+                        if (rn == None || ny > rn) return;   // unloaded, or sky: pass 1's business
+                        int dx = -r + nix, dz = -r + niz;
+                        if (IsCellOccupied(dx, ny, dz))
+                        {
+                            Emit(nix, niz, ny, isWater: false);
+                            return;
+                        }
+                        int idx = Index(nix, niz, ny);
+                        if (visited[idx]) return;
+                        BlockPos bp = scratchPos ??= Pos.Copy();
+                        bp.X = Pos.X + dx; bp.Y = Pos.Y + ny; bp.Z = Pos.Z + dz;
+                        if (ba.GetBlock(bp, BlockLayersAccess.Fluid).IsLiquid()) return;
+                        visited[idx] = true;
+                        queue.Enqueue((nix, niz, ny));
+                    }
+                }
+            }
+
+            if (truncated)
+            {
+                Api.Logger.Warning("[shapeprojector] Surroundings model at {0} truncated at the {1}-cell budget (radius {2}, height {3}).", Pos, Config.maxCellsPerProjector, r, h);
+            }
+            if (cells.Count > start)
+            {
+                previewSegments.Add(new PreviewSegment(-1, start, cells.Count - start, 4, step));
+            }
+
+            // Sampled-grid neighbour: outside the grid a neighbour is taken as level with this column,
+            // so the box edge grows no wall.
+            void Neighbour(int nix, int niz, ref int floor)
+            {
+                if (nix < 0 || nix >= size || niz < 0 || niz >= size) return;
+                int nt = top[niz * size + nix];
+                int bottom = nt == None ? -h : nt + 1;
+                if (bottom < floor) floor = bottom;
+            }
         }
 
         /// <summary>
@@ -613,12 +972,27 @@ namespace ShapeProjector
         /// </summary>
         private void OnClientBlockChanged(BlockPos changedPos, Block oldBlock)
         {
-            if ((!anyDrapeLayer && !anyFeedbackLayer) || renderer == null) return;
+            bool terrain = TerrainModelActive;
+            if ((!anyDrapeLayer && !anyFeedbackLayer && !anyFillLayer && !terrain) || renderer == null) return;
             // BlockPos.dimension is a public field (BlockPos.cs:29).
             if (changedPos.dimension != Pos.dimension) return;
 
             int rx = changedPos.X - Pos.X;
             int rz = changedPos.Z - Pos.Z;
+
+            // Surroundings model (2026-09-07): any change inside its box (one block of slack above,
+            // for a block placed on the window's top face) remodels it — a full cell rebuild on the
+            // next tick, coalesced with everything else that tick.
+            if (terrain)
+            {
+                int ry = changedPos.Y - Pos.Y;
+                int r = Params.TerrainMapRadius, h = Params.TerrainMapHeight;
+                if (rx >= -r && rx <= r && rz >= -r && rz <= r && ry >= -h - 1 && ry <= h + 1)
+                {
+                    QueueTerrainRebuild();
+                    return;
+                }
+            }
             // Outline positions are clipped to |x|,|z| ≤ maxRadius around the projector (Geometry README,
             // maxRadius rule 2), so anything outside that window cannot be an outline column.
             if (rx > Config.maxRadius || rx < -Config.maxRadius || rz > Config.maxRadius || rz < -Config.maxRadius) return;
@@ -627,11 +1001,21 @@ namespace ShapeProjector
             for (int i = 0; i < layerRenders.Count; i++)
             {
                 LayerRender lr = layerRenders[i];
+                // Filled layer (2026-09-07): any block in the column can move its ground or fill a
+                // cell, and a run can change length — full rebuild, never a column patch.
+                if (lr.Fill && lr.Geom.PositionSet.Contains(col))
+                {
+                    fullRebuildQueued = true;
+                    QueuePatch();
+                    return;
+                }
                 // Drape: any block in the column can move the surface. Fixed-Y feedback: only a change at
-                // the cell's own Y can change its occupancy (the tint reads exactly that one block).
+                // one of the column's own Height levels can change an occupancy (the tint reads exactly
+                // those blocks).
+                int ry0 = changedPos.Y - Pos.Y - lr.YOffset;
                 bool relevant = lr.Mode == VerticalMode.Drape
                     ? lr.Geom.PositionSet.Contains(col)
-                    : lr.Feedback && changedPos.Y == Pos.Y + lr.YOffset && lr.Geom.PositionSet.Contains(col);
+                    : lr.Feedback && ry0 >= 0 && ry0 < lr.Height && lr.Geom.PositionSet.Contains(col);
                 if (!relevant) continue;
                 dirtyColumns.Add(col);
                 QueuePatch();
@@ -646,6 +1030,21 @@ namespace ShapeProjector
         /// IEventAPI.cs:158) and is auto-unregistered by the BlockEntity base on remove/unload
         /// (BlockEntity.cs:297-303, 352-358). Verified this session — api-notes "Renderer additions".
         /// </summary>
+        /// <summary>Debounced remodel of the surroundings (see <see cref="terrainRebuildQueued"/>). RegisterDelayedCallback — BlockEntity.cs:260-269.</summary>
+        private void QueueTerrainRebuild()
+        {
+            if (terrainRebuildQueued) return;
+            terrainRebuildQueued = true;
+            RegisterDelayedCallback(OnTerrainRebuild, TerrainRebuildDelayMs);
+        }
+
+        private void OnTerrainRebuild(float dt)
+        {
+            terrainRebuildQueued = false;
+            if (renderer == null) return;
+            RebuildGeometry(force: true);
+        }
+
         private void QueuePatch()
         {
             if (patchQueued) return;
@@ -656,11 +1055,22 @@ namespace ShapeProjector
         private void OnPatchCallback(float dt)
         {
             patchQueued = false;
-            if (renderer == null || dirtyColumns.Count == 0)
+            if (renderer == null)
             {
                 dirtyColumns.Clear();
+                fullRebuildQueued = false;
                 return;
             }
+            if (fullRebuildQueued)
+            {
+                // Filled layer or surroundings model touched: the geometry cache makes this a cell
+                // loop plus a mesh upload — the same mesh upload a column patch pays anyway.
+                fullRebuildQueued = false;
+                dirtyColumns.Clear();
+                RebuildGeometry(force: true);
+                return;
+            }
+            if (dirtyColumns.Count == 0) return;
 
             bool changed = false;
             foreach (BlockXZ col in dirtyColumns)
@@ -668,7 +1078,7 @@ namespace ShapeProjector
                 for (int i = 0; i < layerRenders.Count; i++)
                 {
                     LayerRender lr = layerRenders[i];
-                    if (!lr.Geom.PositionSet.Contains(col)) continue;
+                    if (lr.Fill || !lr.Geom.PositionSet.Contains(col)) continue;   // filled layers rebuild whole (above)
 
                     int idx = IndexOfColumn(lr.Geom.Positions, col);
                     if (idx < 0 || idx >= lr.Columns) continue;   // budget-truncated columns have no cells
@@ -694,7 +1104,7 @@ namespace ShapeProjector
                         for (int k = 0; k < lr.Height; k++)
                         {
                             int y = lr.YOffset + k;
-                            int newColor = IsCellOccupied(col.X, y, col.Z) ? GhostPalette.DoneColor : lr.Color;
+                            int newColor = IsCellOccupied(col.X, y, col.Z) ? doneColorNow : lr.Color;
                             if (cells[ci + k].Color != newColor)
                             {
                                 cells[ci + k] = new GhostCell(col.X, y, col.Z, newColor);
@@ -712,7 +1122,7 @@ namespace ShapeProjector
             // frame, so partial UpdateMesh bookkeeping is not worth its complexity at this size.
             if (changed)
             {
-                renderer.SetCells(cells);
+                PushCells();
                 PreviewCellsChanged?.Invoke();   // §10c: drape live update reaches the preview too
             }
         }
@@ -747,11 +1157,14 @@ namespace ShapeProjector
         /// </summary>
         private void UpdateResampleListener()
         {
-            if (anyDrapeLayer && resampleListenerId == 0)
+            // Filled layers (2026-09-07) resolve their ground in both vertical modes, so a fluid-only
+            // change moves their fill too — they keep the listener alive like a draped layer.
+            bool wanted = anyDrapeLayer || anyFillLayer;
+            if (wanted && resampleListenerId == 0)
             {
                 resampleListenerId = RegisterGameTickListener(OnResampleTick, 2000);
             }
-            else if (!anyDrapeLayer && resampleListenerId != 0)
+            else if (!wanted && resampleListenerId != 0)
             {
                 UnregisterGameTickListener(resampleListenerId);
                 resampleListenerId = 0;
@@ -766,24 +1179,49 @@ namespace ShapeProjector
             for (int i = 0; i < layerRenders.Count; i++)
             {
                 LayerRender lr = layerRenders[i];
+
+                if (lr.Fill)
+                {
+                    // A filled layer's runs change length when its ground moves: compare the bases it
+                    // was built with and rebuild whole on the first difference (both vertical modes —
+                    // the fill part always rests on the ground).
+                    bool drape = lr.Mode == VerticalMode.Drape;
+                    resolveFluidAsSurface = lr.FluidSurface;
+                    IReadOnlyList<BlockXZ> fp = lr.Geom.Positions;
+                    for (int j = 0; j < fp.Count; j++)
+                    {
+                        int? surface = SurfaceHeightAt(fp[j].X, fp[j].Z);
+                        int? b = surface.HasValue ? surface.Value + 1 + (drape ? lr.YOffset : 0) : null;
+                        if (b != lr.ColBase![j])
+                        {
+                            RebuildGeometry(force: true);
+                            return;
+                        }
+                    }
+                    continue;
+                }
+
                 if (lr.Mode != VerticalMode.Drape) continue;
 
                 resolveFluidAsSurface = lr.FluidSurface;
                 IReadOnlyList<BlockXZ> positions = lr.Geom.Positions;
-                for (int j = 0; j < positions.Count; j++)
+                // Only the columns that got cells (budget), and every level of each (Height stride) —
+                // the pre-2026-09-07 loop walked all positions with a stride of one and moved only
+                // the base level of a tall layer.
+                for (int j = 0; j < lr.Columns; j++)
                 {
                     BlockXYZ r = DrapeResolver.ResolveColumn(positions[j], lr.YOffset, VerticalMode.Drape, lr.YOffset, surfaceHeightDel!);
-                    int ci = lr.CellStart + j;
+                    int ci = lr.CellStart + j * lr.Height;
                     if (cells[ci].Y != r.Y)
                     {
-                        cells[ci] = new GhostCell(r.X, r.Y, r.Z, lr.Color);
+                        for (int k = 0; k < lr.Height; k++) cells[ci + k] = new GhostCell(r.X, r.Y + k, r.Z, lr.Color);
                         changed = true;
                     }
                 }
             }
             if (changed)
             {
-                renderer.SetCells(cells);
+                PushCells();
                 PreviewCellsChanged?.Invoke();   // §10c: fluid re-sample reaches the preview too
             }
         }
@@ -804,6 +1242,18 @@ namespace ShapeProjector
             patchQueued = false;
         }
 
+        /// <summary>
+        /// Upper bound on layer lines in the block-info HUD (user bug 2026-09-07): the HUD is a
+        /// GuiDialog, and GuiDialog.OnMouseDown marks any click inside an opened dialog's composer
+        /// bounds as Handled (GuiDialog.cs — the PointInside loop after the composer pass), so a
+        /// panel tall enough to reach the screen centre swallows every click at the crosshair:
+        /// right-click could not open the dialog and no tool worked while looking at a 48-layer
+        /// tower. Eight lines plus the title and centre line stay well above the centre even at
+        /// GUI scale 2. Runs of identical layers one block apart collapse into one line first, so
+        /// a plain tower needs only one.
+        /// </summary>
+        internal const int MaxInfoLayerLines = 8;
+
         // public virtual void GetBlockInfo(IPlayer forPlayer, StringBuilder dsc) — api-notes §c.3 (BlockEntity.cs:481);
         // shown in the block-info HUD when looking at the projector.
         public override void GetBlockInfo(IPlayer forPlayer, StringBuilder dsc)
@@ -813,16 +1263,56 @@ namespace ShapeProjector
             dsc.AppendLine(Lang.Get("shapeprojector:info-center",
                 Params.Dx.ToString("0.#", ci), Params.Dz.ToString("0.#", ci),
                 (Pos.X + Params.Dx).ToString("0.#", ci), (Pos.Z + Params.Dz).ToString("0.#", ci)));
-            for (int i = 0; i < Params.Layers.Count; i++)
+            AppendLayerInfo(Params.Layers, dsc);
+        }
+
+        /// <summary>
+        /// The layer lines of the block-info HUD, a pure function of the layer list (it still needs
+        /// Lang, so it is not in the Geometry test suite): consecutive layers with the same shape,
+        /// size, extent and switch whose Y offsets climb by exactly one (what Add Layer Up produces)
+        /// print as a single "Layers a–b" line; after <see cref="MaxInfoLayerLines"/> lines the
+        /// rest is one "… and N more" line. Layer numbers are 1-based, matching the dialog's list.
+        /// </summary>
+        internal static void AppendLayerInfo(List<LayerParams> layers, StringBuilder dsc)
+        {
+            int lines = 0;
+            int i = 0;
+            while (i < layers.Count)
             {
-                LayerParams l = Params.Layers[i];
-                dsc.AppendLine(Lang.Get("shapeprojector:info-layer",
-                    i + 1,
-                    Lang.Get("shapeprojector:gui-shape-" + l.Shape.ToString().ToLowerInvariant()),
-                    l.SizeSummary() + l.ExtentSummary(),
-                    l.YOffset,
-                    l.Enabled ? "" : Lang.Get("shapeprojector:gui-layer-disabled")));
+                LayerParams first = layers[i];
+                string shape = Lang.Get("shapeprojector:gui-shape-" + first.Shape.ToString().ToLowerInvariant());
+                string size = first.SizeSummary() + first.ExtentSummary();
+                string state = first.Enabled ? "" : Lang.Get("shapeprojector:gui-layer-disabled");
+
+                int j = i + 1;
+                while (j < layers.Count && SameRun(first, layers[j], size) && layers[j].YOffset == layers[j - 1].YOffset + 1) j++;
+                // layers[i..j-1] is one run
+
+                if (lines >= MaxInfoLayerLines)
+                {
+                    dsc.AppendLine(Lang.Get("shapeprojector:info-layer-more", layers.Count - i, layers.Count));
+                    return;
+                }
+
+                if (j - i == 1)
+                {
+                    dsc.AppendLine(Lang.Get("shapeprojector:info-layer", i + 1, shape, size, first.YOffset, state));
+                }
+                else
+                {
+                    dsc.AppendLine(Lang.Get("shapeprojector:info-layer-run",
+                        i + 1, j, shape, size, first.YOffset, layers[j - 1].YOffset, state));
+                }
+                lines++;
+                i = j;
             }
+        }
+
+        private static bool SameRun(LayerParams a, LayerParams b, string aSize)
+        {
+            return a.Shape == b.Shape
+                && a.Enabled == b.Enabled
+                && aSize == b.SizeSummary() + b.ExtentSummary();
         }
 
         // public virtual void OnBlockRemoved() — api-notes §c.3 (BlockEntity.cs:294); call base.

@@ -1,6 +1,6 @@
 #version 330 core
 
-// Jonastech Shape Projector — see-through pass fragment shader (spec 6/9).
+// Jonastech Shape Projector - see-through pass fragment shader (spec 6/9).
 // Depth compare copied from vanilla rift.fsh:26-33 with the hardcoded tolerance replaced by the
 // seeThroughDepth uniform (recipe docs/api-notes.md f.4). linearDepth() and the zNear/zFar uniforms
 // come from the engine include fogandlight.fsh (assets/game/shaderincludes/fogandlight.fsh:214-227);
