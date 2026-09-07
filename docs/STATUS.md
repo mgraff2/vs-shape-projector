@@ -1,6 +1,6 @@
 # Project status — session handoff (2026-09-07)
 
-## Release 1.1.0 — in release (2026-09-07)
+## Release 1.1.0 — published 2026-09-07 (GitHub release v1.1.0; ModDB upload by the user)
 
 Everything from 2026-09-07 (ruling 9f and its sub-items below) is committed on `main`. Gate 1 green
 on every change; the user's in-game pass is logged in acceptance-log.md; the version sweep for the
