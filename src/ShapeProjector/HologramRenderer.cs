@@ -77,7 +77,18 @@ namespace ShapeProjector
         private float scale;
         private float bboxCx, bboxCy, bboxCz;   // block-local bbox center of the framed content
         private float holoCy;                   // holo volume center Y (block-local; X/Z are 0.5)
-        private int stride = 1;                 // uniform decimation stride (silent — no GUI note anymore)
+        private int stride = 1;                 // decimation ratio cells : drawn tiles (silent — no GUI note)
+
+        /// <summary>One drawn tile of the mini: block-local origin, colour, X/Z footprint in cells, owning layer (-1 = surroundings).</summary>
+        private readonly record struct DrawCell(int X, int Y, int Z, int Color, int Fp, int LayerIndex);
+        /// <summary>
+        /// What the meshes draw, rebuilt in <see cref="BuildDrawList"/> on every cell change: over
+        /// previewMaxBlocks the cells are merged into f x f tiles (f = ceil(sqrt(stride)), raised until
+        /// the list fits) instead of keeping every k-th cell in list order — the old stride left a
+        /// dotted, gappy figure (user, 2026-09-07: "many gaps in the shape model"); tiles keep a big
+        /// figure reading as solid, just coarser, exactly like the sampled surroundings model.
+        /// </summary>
+        private readonly List<DrawCell> drawList = new List<DrawCell>();
         private bool markerShown;
 
         private int? lastSelected;
@@ -220,11 +231,84 @@ namespace ShapeProjector
             // Budget (spec §10c amendment): previewMaxBlocks caps the mini's cube count; uniform
             // decimation past it, silent.
             stride = cells.Count <= maxBlocks ? 1 : (cells.Count + maxBlocks - 1) / maxBlocks;
+            BuildDrawList(cells);
 
             cullRadius = holoSize + 1.0;
 
             RebuildStatic(cells);
             RebuildFill(cells);
+        }
+
+        private static int FloorDiv(int a, int b) => a >= 0 ? a / b : -((-a + b - 1) / b);
+
+        /// <summary>Merged face rectangles of the block-exact content, colours already treated (RebuildFill's rules), rebuilt with the draw list.</summary>
+        private readonly List<FaceQuad> quads = new List<FaceQuad>();
+        private readonly List<GhostCell> meshCells = new List<GhostCell>();
+        /// <summary>Plane inset of the mini's rectangles in cell units — the gap the CellFill cubes used to leave, halved.</summary>
+        private const float MeshInset = (1f - CellFill) * 0.5f;
+
+        /// <summary>
+        /// Builds what the meshes draw. Block-exact segments (Footprint 1) go through GhostMesher —
+        /// exposed, colour-merged rectangles, so a radius-256 solid disc is a few hundred quads and
+        /// needs no decimation at all (user request 2026-09-07). Sampled surroundings tiles (Footprint
+        /// > 1) stay cubes in the draw list. The old tiling decimation remains only as the fallback
+        /// for a pathological cell set whose merged faces still outrun the budget many times over.
+        /// </summary>
+        private void BuildDrawList(IReadOnlyList<GhostCell> cells)
+        {
+            drawList.Clear();
+            quads.Clear();
+            meshCells.Clear();
+
+            int? selected = highlightSelected ? lastSelected : null;
+            int doneColor = GhostPalette.DoneColor;
+            int monoBase = GhostPalette.Color(0);   // cyan palette entry — holoStyle "mono" (ruling 9)
+
+            foreach (PreviewSegment seg in be.PreviewSegments)
+            {
+                if (!ShowSegment(seg)) continue;
+                bool isSelected = selected.HasValue && seg.LayerIndex == selected.Value;
+                bool terrain = seg.LayerIndex < 0;
+                for (int i = seg.CellStart; i < seg.CellStart + seg.Count; i++)
+                {
+                    GhostCell c = cells[i];
+                    // Layer hue from the cached cell itself — done-tinted cells stay green in the mini
+                    // (build feedback in miniature); mono maps layer hues to cyan but keeps done green.
+                    // The layer being CONFIGURED (holoHighlightSelected) overrides its hue with SelectedHue
+                    // and gets the brighter treatment. Done cells are told by RGB alone (world alpha follows
+                    // GhostOpacity). Surroundings (LayerIndex -1) keep their own colour, never mono'd.
+                    bool isDone = (c.Color & 0xFFFFFF) == (doneColor & 0xFFFFFF);
+                    int baseColor = isSelected ? SelectedHue : (mono && !terrain && !isDone ? monoBase : c.Color);
+                    int color = TreatColor(baseColor, isSelected);
+                    if (seg.Footprint == 1) meshCells.Add(new GhostCell(c.X, c.Y, c.Z, color));
+                    else drawList.Add(new DrawCell(c.X, c.Y, c.Z, color, seg.Footprint, seg.LayerIndex));
+                }
+            }
+
+            if (meshCells.Count > 0)
+            {
+                quads.AddRange(GhostMesher.Merge(meshCells));
+                if (quads.Count > maxBlocks * 6)
+                {
+                    // Fallback: merged faces still far past the budget (a checkerboard, say) — tile the
+                    // block-exact cells instead, f x f in X/Z, grown until it fits.
+                    quads.Clear();
+                    int baseCount = drawList.Count;   // the sampled surroundings tiles stay
+                    int f = 2;
+                    for (; ; f++)
+                    {
+                        drawList.RemoveRange(baseCount, drawList.Count - baseCount);
+                        var seen = new HashSet<(int, int, int)>();
+                        foreach (GhostCell c in meshCells)
+                        {
+                            int kx = FloorDiv(c.X, f), kz = FloorDiv(c.Z, f);
+                            if (!seen.Add((kx, c.Y, kz))) continue;
+                            drawList.Add(new DrawCell(kx * f, c.Y, kz * f, c.Color, f, 0));
+                        }
+                        if (drawList.Count <= maxBlocks || f >= 64) break;
+                    }
+                }
+            }
         }
 
         /// <summary>Which segments the mini draws: the surroundings model always; the figures only while the projector's HologramFigures switch is on (user request 2026-09-07).</summary>
@@ -252,7 +336,7 @@ namespace ShapeProjector
                 lineRef = null;
             }
 
-            int n = cells.Count / stride + be.PreviewSegments.Count + 2;   // upper bound incl. per-segment remainder + marker
+            int n = drawList.Count + quads.Count * 4 + 2;   // tile edges + grid lines (bound) + marker
             // MeshData(capacityVertices, capacityIndices, withNormals, withUv, withRgba, withFlags)
             // — api-notes §d.3/§o.1 (MeshData.cs:665). Uv null ⇒ rgba lands at VBO location 1 =
             // blockhighlights.vsh "vertexColor" (attribute shift rule, api-notes §d.2, IRenderAPI.cs:519-521).
@@ -262,18 +346,29 @@ namespace ShapeProjector
             // RenderMesh draws GL_LINES with it (ClientPlatformWindows.cs:3222, 1004-1023 — §o.1).
             mesh.mode = EnumDrawMode.Lines;
 
-            float half = scale * CellFill * 0.5f;
-            foreach (PreviewSegment seg in be.PreviewSegments)
+            // Merged rectangles: dark edges along every cell boundary inside them and around them —
+            // the same block-by-block reading the per-cube edges gave (ruling 9's thin dark outlines).
+            foreach (FaceQuad q in quads)
             {
-                if (!ShowSegment(seg)) continue;
-                float fp = seg.Footprint;   // sampled surroundings tiles are fp cells wide (X/Z), one tall
-                float halfXZ = half * fp;
-                for (int j = 0; j < seg.Count; j += stride)
+                GhostMesher.GridLines(q, MeshInset, (x0, y0, z0, x1, y1, z1) =>
                 {
-                    GhostCell c = cells[seg.CellStart + j];
-                    MapPoint(c.X + fp * 0.5f, c.Y + 0.5f, c.Z + fp * 0.5f, out float hx, out float hy, out float hz);
-                    AddCubeEdges(mesh, hx, hy, hz, halfXZ, half, halfXZ);
-                }
+                    MapPoint(x0, y0, z0, out float ax, out float ay, out float az);
+                    MapPoint(x1, y1, z1, out float bx, out float by, out float bz);
+                    int v = mesh.VerticesCount;
+                    mesh.AddVertexSkipTex(ax, ay, az, EdgeColor);
+                    mesh.AddVertexSkipTex(bx, by, bz, EdgeColor);
+                    mesh.AddIndex(v);
+                    mesh.AddIndex(v + 1);
+                });
+            }
+
+            float half = scale * CellFill * 0.5f;
+            foreach (DrawCell d in drawList)
+            {
+                float fp = d.Fp;   // tiles are fp cells wide (X/Z), one tall
+                float halfXZ = half * fp;
+                MapPoint(d.X + fp * 0.5f, d.Y + 0.5f, d.Z + fp * 0.5f, out float hx, out float hy, out float hz);
+                AddCubeEdges(mesh, hx, hy, hz, halfXZ, half, halfXZ);
             }
             // No edge outline on the offset indicator (ruling 10): dark cube edges are what make a
             // shape read as a cube — the indicator is a plain bright dot, fill mesh only.
@@ -294,8 +389,8 @@ namespace ShapeProjector
                 fillRef = null;
             }
 
-            int n = cells.Count / stride + be.PreviewSegments.Count + 3;   // cubes + remainders + marker + halo
-            MeshData mesh = new MeshData(n * 24, n * 36, withNormals: false, withUv: false, withRgba: true, withFlags: false);
+            int n = drawList.Count * 6 + quads.Count + 7;   // tile faces + rectangles + marker + halo
+            MeshData mesh = new MeshData(n * 4, n * 6, withNormals: false, withUv: false, withRgba: true, withFlags: false);
 
             // Backdrop halo (ruling 9): a faint dark translucent box enclosing the content, slightly
             // inflated per axis (flat shapes get a slab, not an empty cube). In the OIT stage its
@@ -309,42 +404,29 @@ namespace ShapeProjector
                 AddCubeFaces(mesh, cx, cy, cz, sx, sy, sz, HaloColor, shaded: false);
             }
 
-            // Selected-layer marking is config-gated and off by default (holoHighlightSelected):
-            // with it off every layer renders in its own treated hue and nothing tracks the dialog.
-            int? selected = highlightSelected ? lastSelected : null;
-            float size = scale * CellFill;
-            int doneColor = GhostPalette.DoneColor;
-            int monoBase = GhostPalette.Color(0);   // cyan palette entry — holoStyle "mono" (ruling 9)
-
-            foreach (PreviewSegment seg in be.PreviewSegments)
+            // Merged rectangles (colours treated in BuildDrawList), shaded per face like the cubes were.
+            Span<float> xyz = stackalloc float[12];
+            foreach (FaceQuad q in quads)
             {
-                bool isSelected = selected.HasValue && seg.LayerIndex == selected.Value;
-                if (!ShowSegment(seg)) continue;
-                // Surroundings model (user request 2026-09-07): LayerIndex -1, always its own colour —
-                // never re-hued by mono, never selected. Sampled tiles are Footprint cells wide.
-                bool terrain = seg.LayerIndex < 0;
-                float fp = seg.Footprint;
-                float sizeXZ = size * fp;
-                for (int j = 0; j < seg.Count; j += stride)
+                GhostMesher.Corners(q, MeshInset, xyz);
+                int color = ColorUtil.ColorMultiply3(q.Color, GhostMesher.Shading(q.Face));
+                int baseVert = mesh.VerticesCount;
+                for (int i = 0; i < 4; i++)
                 {
-                    GhostCell c = cells[seg.CellStart + j];
-                    // Layer hue from the cached cell itself — done-tinted cells stay green in the mini
-                    // (build feedback in miniature); mono maps layer hues to cyan but keeps done green.
-                    // User request 2026-09-02: the layer being CONFIGURED overrides its own hue with
-                    // SelectedHue so "what did Apply just change" is answerable at a glance, whatever
-                    // colour that layer happens to carry. The selected treatment on top (x1.3 brighten,
-                    // 35% toward white, full alpha) is what keeps it apart from the build-feedback done
-                    // tint, which is the same palette green at the dimmer unselected alpha.
-                    // Done cells are told by RGB alone: the world alpha follows the projector's
-                    // GhostOpacity (2026-09-07) and TreatColor replaces it anyway.
-                    bool isDone = (c.Color & 0xFFFFFF) == (doneColor & 0xFFFFFF);
-                    int baseColor = isSelected
-                        ? SelectedHue
-                        : (mono && !terrain && !isDone ? monoBase : c.Color);
-                    int color = TreatColor(baseColor, isSelected);
-                    MapPoint(c.X + fp * 0.5f, c.Y + 0.5f, c.Z + fp * 0.5f, out float hx, out float hy, out float hz);
-                    AddCubeFaces(mesh, hx, hy, hz, sizeXZ, size, sizeXZ, color, shaded: true);
+                    MapPoint(xyz[i * 3], xyz[i * 3 + 1], xyz[i * 3 + 2], out float hx, out float hy, out float hz);
+                    mesh.AddVertexSkipTex(hx, hy, hz, color);
                 }
+                mesh.AddIndex(baseVert); mesh.AddIndex(baseVert + 1); mesh.AddIndex(baseVert + 2);
+                mesh.AddIndex(baseVert); mesh.AddIndex(baseVert + 2); mesh.AddIndex(baseVert + 3);
+            }
+
+            float size = scale * CellFill;
+            foreach (DrawCell d in drawList)
+            {
+                float fp = d.Fp;
+                float sizeXZ = size * fp;
+                MapPoint(d.X + fp * 0.5f, d.Y + 0.5f, d.Z + fp * 0.5f, out float hx, out float hy, out float hz);
+                AddCubeFaces(mesh, hx, hy, hz, sizeXZ, size, sizeXZ, d.Color, shaded: true);
             }
 
             if (markerShown)
@@ -464,6 +546,7 @@ namespace ShapeProjector
             if (highlightSelected && selected != lastSelected)
             {
                 lastSelected = selected;
+                BuildDrawList(be.PreviewCells);   // treated colours live in the draw list / quads now
                 RebuildFill(be.PreviewCells);
                 if (fillRef == null) return;
             }

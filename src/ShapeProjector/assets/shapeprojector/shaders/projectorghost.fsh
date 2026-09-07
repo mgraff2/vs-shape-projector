@@ -11,6 +11,7 @@
 //   otherwise    -> draw dimmed, fading out with burial depth.
 
 in vec4 color;
+in vec4 rgbaFog;   // required by the fogandlight.fsh include (see the .vsh)
 
 out vec4 outColor;
 

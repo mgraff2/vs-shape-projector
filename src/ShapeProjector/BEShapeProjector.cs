@@ -145,6 +145,13 @@ namespace ShapeProjector
         private int worldCellCount;
         /// <summary>The done tint at the opacity of the current build — the column patch must paint the same green the rebuild did.</summary>
         private int doneColorNow = GhostPalette.DoneColor;
+        /// <summary>
+        /// What the cell budget cut from the last rebuild, in the player's words, one line per layer
+        /// (empty when nothing was cut). The dialog shows it after Apply (user, 2026-09-07: radius 256
+        /// at thickness 250 "only allowed partial rendering" with nothing on screen saying why —
+        /// until now the warning went to the log alone). Client-side only.
+        /// </summary>
+        public string BudgetReport { get; private set; } = "";
 
         // public virtual void Initialize(ICoreAPI api) — api-notes §c.3 (BlockEntity.cs:132).
         // "called right after the block entity was spawned or right after it was loaded from a
@@ -439,6 +446,7 @@ namespace ShapeProjector
             string key = Params.RenderKey();
             if (!force && key == lastRenderKey) return;
             lastRenderKey = key;
+            BudgetReport = "";
 
             while (geometries.Count < Params.Layers.Count) geometries.Add(new LayerGeometry());
 
@@ -471,7 +479,11 @@ namespace ShapeProjector
             int doneColor = GhostPalette.DoneColorAt(alpha);
             doneColorNow = doneColor;
 
-            for (int i = 0; i < Params.Layers.Count; i++)
+            // Figures are computed only where something shows them: the world (world marks on) or
+            // the hologram (figures switch on). With both off the projector is a pure survey of its
+            // surroundings and pays nothing for its layers (user, 2026-09-07).
+            bool needFigures = Params.ProjectionEnabled || Params.HologramFigures;
+            for (int i = 0; needFigures && i < Params.Layers.Count; i++)
             {
                 LayerParams layer = Params.Layers[i];
                 // Master switch (user ruling 2026-09-01) gates every layer; per-layer Enabled unchanged.
@@ -536,6 +548,7 @@ namespace ShapeProjector
                     Api.Logger.Warning(
                         "[shapeprojector] Layer {0} at {1} exceeds the {2}-cell budget ({3} columns x height {4}); drawing height {5} over {6} columns.",
                         i, Pos, Config.maxCellsPerProjector, columns, lr.Height, fitHeight, fitColumns);
+                    AddBudgetLine(i, fitColumns, columns, fitHeight, lr.Height);
                     lr.Height = fitHeight;
                     budgetColumns = fitColumns;
                 }
@@ -597,6 +610,18 @@ namespace ShapeProjector
             PreviewCellsChanged?.Invoke();   // §10c: same cache, same moment, event-driven
         }
 
+        private void AddBudgetLine(int layerIndex, int drawnColumns, int columns, int drawnHeight, int height)
+        {
+            // Name only what changed (user, 2026-09-07: "7784 of 7784 drawn (so nothing was cut)" — the
+            // height clause that carried the cut had overflowed the line).
+            string what = "";
+            if (drawnHeight != height) what = Lang.Get("shapeprojector:gui-budget-height", drawnHeight, height);
+            if (drawnColumns != columns) what += (what.Length > 0 ? ", " : "") + Lang.Get("shapeprojector:gui-budget-columns", drawnColumns, columns);
+            if (what.Length == 0) return;
+            string line = Lang.Get("shapeprojector:gui-budget-line", layerIndex + 1, what);
+            BudgetReport = BudgetReport.Length == 0 ? line : BudgetReport + " " + line;
+        }
+
         /// <summary>
         /// Hands the cell cache to the world renderer — or nothing at all while the per-projector
         /// world-marks switch is off (user request 2026-09-07, "hologram only"): the hologram keeps
@@ -642,6 +667,7 @@ namespace ShapeProjector
                 Api.Logger.Warning(
                     "[shapeprojector] Filled layer {0} at {1} exceeds the {2}-cell budget ({3} columns, level {4}, height {5}); drawing height {6} over {7} columns.",
                     index, Pos, Config.maxCellsPerProjector, columns, level, lr.Height, fitHeight, fitColumns);
+                AddBudgetLine(index, fitColumns, columns, fitHeight, lr.Height);
             }
 
             lr.Fill = true;
@@ -736,7 +762,10 @@ namespace ShapeProjector
                 }
             }
 
-            int room = Math.Max(0, Config.maxCellsPerProjector - cells.Count);
+            // The model has its own budget (config terrainModelMaxCells): it never competes with the
+            // figures for maxCellsPerProjector (user, 2026-09-07 — hiding the model gave the figures
+            // nothing back, and a full-budget figure left the model nothing).
+            int room = Config.terrainModelMaxCells;
             int start = cells.Count;
             bool truncated = false;
             // Real block colours (user, 2026-09-07; the only colouring since the land/water pickers were
@@ -754,7 +783,9 @@ namespace ShapeProjector
                 return (c & 0xFFFFFF) | (GhostPalette.Alpha << 24);
             }
             // One bit per cell of the (sampled) box: emitted once, whichever pass reaches it first.
-            bool[] emitted = new bool[size * size * levels];
+            // System.Collections.BitArray: at reach 256 the box is 129 x 129 x 513 = 8.5M cells; a bool per
+            // cell would be 8.5 MB per rebuild, a bit per cell is ~1 MB.
+            System.Collections.BitArray emitted = new System.Collections.BitArray(size * size * levels);
             int Index(int ix, int iz, int y) => ((y + h) * size + iz) * size + ix;
             bool Emit(int ix, int iz, int y, bool isWater)
             {
@@ -816,7 +847,7 @@ namespace ShapeProjector
             // fill; underwater cave walls are not modelled.
             if (step == 1 && !truncated)
             {
-                bool[] visited = new bool[size * size * levels];
+                System.Collections.BitArray visited = new System.Collections.BitArray(size * size * levels);
                 Queue<(int ix, int iz, int y)> queue = new Queue<(int, int, int)>();
 
                 bool IsAir(int ix, int iz, int y)
@@ -884,7 +915,7 @@ namespace ShapeProjector
 
             if (truncated)
             {
-                Api.Logger.Warning("[shapeprojector] Surroundings model at {0} truncated at the {1}-cell budget (radius {2}, height {3}).", Pos, Config.maxCellsPerProjector, r, h);
+                Api.Logger.Warning("[shapeprojector] Surroundings model at {0} truncated at its {1}-cell budget (radius {2}, reach {3}).", Pos, Config.terrainModelMaxCells, r, h);
             }
             if (cells.Count > start)
             {
@@ -1049,8 +1080,14 @@ namespace ShapeProjector
         {
             if (patchQueued) return;
             patchQueued = true;
-            RegisterDelayedCallback(OnPatchCallback, 0);
+            // A column patch re-meshes the whole layer set; with the merged-face mesher that is tens
+            // of ms for a 200,000-cell figure, so past LargeCellCount the patches are coalesced over
+            // a few hundred ms instead of per tick (2026-09-07, full-detail figures).
+            RegisterDelayedCallback(OnPatchCallback, cells.Count > LargeCellCount ? TerrainRebuildDelayMs : 0);
         }
+
+        /// <summary>Cell count past which live patches are debounced rather than applied on the next tick.</summary>
+        private const int LargeCellCount = 50000;
 
         private void OnPatchCallback(float dt)
         {
@@ -1260,9 +1297,12 @@ namespace ShapeProjector
         {
             base.GetBlockInfo(forPlayer, dsc);
             System.Globalization.CultureInfo ci = System.Globalization.CultureInfo.InvariantCulture;
+            // Map coordinates, as the game's coordinate HUD shows them: block position minus the default
+            // spawn position (HudElementCoordinates.cs:65; the spawn is "usually the map middle").
+            BlockPos spawn = Api.World.DefaultSpawnPosition.AsBlockPos;
             dsc.AppendLine(Lang.Get("shapeprojector:info-center",
                 Params.Dx.ToString("0.#", ci), Params.Dz.ToString("0.#", ci),
-                (Pos.X + Params.Dx).ToString("0.#", ci), (Pos.Z + Params.Dz).ToString("0.#", ci)));
+                (Pos.X - spawn.X + Params.Dx).ToString("0.#", ci), (Pos.Z - spawn.Z + Params.Dz).ToString("0.#", ci)));
             AppendLayerInfo(Params.Layers, dsc);
         }
 

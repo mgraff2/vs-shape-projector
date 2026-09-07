@@ -136,6 +136,10 @@
 <ul>
 <li><strong>Marks turn green as you fill them.</strong> Place a block where a guide stands and its mark goes green, so the figure completes in front of you and what is left is obvious at a glance.</li>
 <li><strong>A holographic miniature</strong> floats above the block: the whole design in small, world-aligned so north in the mini is north in the world. Read a forty-layer plan without walking it. It can be switched off on its own, without stopping the projection, and server owners can set its size, height and style.</li>
+<li><strong>A model of your land.</strong> Switch on <em>Model surroundings</em> and the miniature also shows what already stands around the projector &mdash; ground, buildings, the walls under their eaves, water &mdash; every block in its real colour, with the figures drawn in their true places among it. A model of your home and of the work at once. Hide the figures and it is a survey of the land alone; switch off the world marks and the projector is hologram-only.</li>
+<li><strong>Fill up to level.</strong> A layer can mark every block from the ground up to its level under each column of the figure, so a pit under a platform shows exactly the fill it needs and a causeway can start at the lake bed.</li>
+<li><strong>Full detail at any size.</strong> Marks are drawn as merged faces, so a radius 256 disc at full thickness renders whole &mdash; in the world and in the miniature &mdash; with grid lines along the block boundaries so every mark stays countable.</li>
+<li><strong>Your colours.</strong> Twenty-four to pick from, each shown as itself beside its code, or type an exact hex value; and a mark opacity per projector.</li>
 <li><strong>Named presets are saved per player, not per projector</strong>, so a shape you worked out once follows you to every projector you can edit. Load one in place of what is there, or add it on top of it.</li>
 <li><strong>Shortcuts for the repetitive part.</strong> <strong>Page Up</strong> copies the selected layer one block higher &mdash; a course per press, thirty presses for a thirty-block tower. <strong>Page Down</strong> copies it one block outward, filling toward a solid disc. <strong>+</strong> and <strong>&minus;</strong> grow or shrink every layer at once, including the hidden ones, so nothing drifts out of step.</li>
 <li><strong>Tooltips that do the arithmetic.</strong> Hover any control and it tells you what it will do to <em>the layer you have selected</em> &mdash; &quot;radius 11 &rarr; 12&quot;, &quot;Y offset +2 &rarr; +3&quot;, &quot;width and depth both +2, one block on each of the four sides&quot; &mdash; and a greyed-out button says why it is greyed out.</li>
@@ -170,8 +174,8 @@
 </tr>
 <tr>
 <td><code>maxOutlineThickness</code></td>
-<td>32</td>
-<td>Broadest a single layer&#39;s band may be</td>
+<td>256</td>
+<td>Broadest a single layer&#39;s band may be; a layer&#39;s own ceiling is its radius, at which it is solid</td>
 </tr>
 <tr>
 <td><code>maxLayerHeight</code></td>
@@ -180,8 +184,23 @@
 </tr>
 <tr>
 <td><code>maxCellsPerProjector</code></td>
-<td>60000</td>
-<td>Guide blocks one projector may draw. Over the budget a layer gives up height before it gives up its shape, so an over-ambitious figure still reads as itself</td>
+<td>300000</td>
+<td>Guide blocks one projector may hold. Over the budget a layer gives up height before it gives up its shape, so an over-ambitious figure still reads as itself, and the dial says what was trimmed</td>
+</tr>
+<tr>
+<td><code>maxTerrainMapRadius</code> / <code>maxTerrainMapHeight</code></td>
+<td>256 / 256</td>
+<td>How far out, and how far up and down, the surroundings model may reach</td>
+</tr>
+<tr>
+<td><code>terrainModelMaxSpan</code> / <code>terrainModelMaxCells</code></td>
+<td>129 / 60000</td>
+<td>Past this many columns across, the model samples coarser; and the model&#39;s own block budget, separate from the figures&#39;</td>
+</tr>
+<tr>
+<td><code>ghostGridLines</code></td>
+<td>true</td>
+<td>Grid lines along the block boundaries of the marks; off for smooth sheets</td>
 </tr>
 <tr>
 <td><code>renderDistance</code></td>
@@ -233,6 +252,7 @@
 <ul>
 <li>Outlines are recomputed only when something actually changes, and a draped line re-resolves just the columns you dug &mdash; not the whole figure, every frame.</li>
 <li>The green &quot;done&quot; tint is for level layers. A draped line follows the surface, so it can never be filled in.</li>
+<li>The surroundings model is a view from outside: roofs, walls with their doorways and windows, the walls under eaves, water as its surface &mdash; never the inside of a closed room.</li>
 <li>The handbook carries the full explanation in-game: the centre and its offset, layers, the two ways of standing, and the moat worked through.</li>
 <li>Config lives at <code>VintagestoryData/ModConfig/shapeprojector.json</code>; your saved presets at <code>VintagestoryData/ModData/shapeprojector/presets.json</code>.</li>
 </ul>

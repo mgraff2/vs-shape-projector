@@ -1,6 +1,18 @@
 <!-- Paste into the "changelog" field of the ModDB release. Newest version first;
      keep older entries so the page reads as a history. -->
 
+<p><strong>Jonastech Shape Projector 1.1.0 &mdash; for Vintage Story 1.22.x</strong></p>
+<ul>
+<li><strong>Full detail at any size.</strong> Marks are drawn as merged faces now, not one little cube each, so a radius 256 disc at full thickness &mdash; over 200,000 blocks &mdash; renders whole, in the world and in the miniature, with grid lines along the block boundaries so every mark stays countable. The per-projector mark limit rises from 60,000 to 300,000 with it.</li>
+<li><strong>A model of your land in the miniature.</strong> Switch on <em>Model surroundings</em> and the hologram also shows what already stands around the projector &mdash; ground, buildings, walls under their eaves, water &mdash; every block in its real colour, with the figures drawn in their true places among it. Radius up to 256 (coarser tiles past 64) and reach up to 256 blocks above and below. Hide the figures and it is a survey of the land alone.</li>
+<li><strong>Fill up to level.</strong> A layer can mark every block from the ground up to its level under each column of the figure: a pit under a platform shows exactly the fill it needs, and with the fluid rule off the fill starts at the lake bed. In Follow terrain the level is the highest ground under the figure.</li>
+<li><strong>Thickness up to the radius</strong>, at which point the figure is solid; the field names the number that means solid for the figure you are editing.</li>
+<li><strong>Colour picker.</strong> Twenty-four colours, each entry showing the colour itself beside its hex code, a hex field for an exact value, and a preview square that always shows the colour in use.</li>
+<li><strong>Mark opacity</strong> per projector, and a <strong>World marks</strong> switch so a projector can be hologram-only.</li>
+<li><strong>Seeing marks through the ground works now.</strong> The through-terrain reveal had never actually switched on; its shader failed quietly on every client. Buried marks within the see-through depth now show, dimmed.</li>
+<li><strong>Fixes.</strong> A tall stack of layers no longer makes the block-info panel swallow your clicks; the centre readout uses map coordinates instead of raw world position; huge solid figures no longer freeze the game on Apply; tall layers on water and build feedback on tall walls update every course; and when a figure is too large to draw in full, the dial says which layer was trimmed and by how much.</li>
+</ul>
+
 <p><strong>Jonastech Shape Projector 1.0.0 &mdash; for Vintage Story 1.22.x</strong></p>
 <ul>
 <li><strong>First release.</strong> A craftable block that casts building guides onto the world in light. Place it, right-click it, dial in a figure. It places nothing and breaks nothing &mdash; it only shows you where.</li>

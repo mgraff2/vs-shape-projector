@@ -22,7 +22,9 @@ namespace ShapeProjector
 
         private readonly ICoreClientAPI capi;
         private readonly BlockPos pos;
-        private MeshRef? meshRef;
+        private MeshRef? meshRef;    // merged face rectangles (triangles)
+        private MeshRef? lineRef;    // cell-boundary grid over them (lines), config ghostGridLines
+        private readonly bool gridLines;
 
         // Matrixf (namespace Vintagestory.API.Client) — api-notes §d.5 (Matrixf.cs:8,39,87,201).
         private readonly Matrixf modelViewMat = new Matrixf();
@@ -59,6 +61,7 @@ namespace ShapeProjector
             this.pos = pos.Copy();
             renderDistanceSq = (double)modSystem.Config.renderDistance * modSystem.Config.renderDistance;
             seeThroughDepth = modSystem.Config.seeThroughDepth;
+            gridLines = modSystem.Config.ghostGridLines;
         }
 
         /// <summary>
@@ -67,63 +70,95 @@ namespace ShapeProjector
         /// </summary>
         public void SetCells(IReadOnlyList<GhostCell> cells)
         {
-            if (meshRef != null)
-            {
-                // void DeleteMesh(MeshRef vao) — "Should always be called at the end of a meshes lifetime"
-                // — api-notes §d.3 (IRenderAPI.cs:552).
-                capi.Render.DeleteMesh(meshRef);
-                meshRef = null;
-            }
+            DeleteMeshes();
             if (cells.Count == 0) return;
 
-            MeshData mesh = BuildMesh(cells);
+            BuildMeshes(cells, out MeshData faces, out MeshData? lines);
 
             // MeshRef UploadMesh(MeshData data) — api-notes §d.3 (IRenderAPI.cs:525).
-            meshRef = capi.Render.UploadMesh(mesh);
+            meshRef = capi.Render.UploadMesh(faces);
+            if (lines != null) lineRef = capi.Render.UploadMesh(lines);
+        }
+
+        private void DeleteMeshes()
+        {
+            // void DeleteMesh(MeshRef vao) — "Should always be called at the end of a meshes lifetime"
+            // — api-notes §d.3 (IRenderAPI.cs:552).
+            if (meshRef != null) { capi.Render.DeleteMesh(meshRef); meshRef = null; }
+            if (lineRef != null) { capi.Render.DeleteMesh(lineRef); lineRef = null; }
         }
 
         /// <summary>
-        /// Builds the ghost-cube mesh in block-local space (origin = projector block corner).
-        /// Mesh layout copied from the engine's BlockHighlight — api-notes §d.2
-        /// (BlockHighlight.cs:245-272): xyz + rgba only, no uv/normals/flags.
+        /// Builds the ghost meshes in block-local space (origin = projector block corner) from the
+        /// merged faces GhostMesher produces (user request 2026-09-07, full detail at radius 256 x
+        /// thickness 256): one triangles mesh of exposed, colour-merged face rectangles — a solid
+        /// figure is a few hundred quads instead of six per cell — and, when the config has
+        /// ghostGridLines on, one Lines mesh of the cell-boundary grid over those rectangles, which is
+        /// what still lets a mark be counted block by block now that the inset cubes are gone.
+        /// Layout as the engine's BlockHighlight — api-notes §d.2 (BlockHighlight.cs:245-272): xyz +
+        /// rgba only, no uv/normals/flags. Per-face shading as before (CubeMeshUtil.DefaultBlockSideShadingsByFacing
+        /// via ColorUtil.ColorMultiply3 — exactly what ModelCubeUtilExt.AddFaceSkipTex did per cube).
+        /// The old 0.05 cube inset survives as the plane inset of each rectangle: a ghost face coplanar
+        /// with a real block face would z-fight.
         /// </summary>
-        private MeshData BuildMesh(IReadOnlyList<GhostCell> cells)
+        private void BuildMeshes(IReadOnlyList<GhostCell> cells, out MeshData faces, out MeshData? lines)
         {
+            List<FaceQuad> quads = GhostMesher.Merge(cells);
+
             // MeshData(int capacityVertices, int capacityIndices, bool withNormals, bool withUv, bool withRgba, bool withFlags)
-            // — api-notes §d.3 (MeshData.cs:665). 24 verts / 36 indices per cube (6 faces × 4 verts / 6 idx).
-            // With Uv == null the rgba attribute lands at VBO location 1, which is what
-            // blockhighlights.vsh expects ("vertexColor" at location 1) — api-notes §d.2.
-            MeshData mesh = new MeshData(cells.Count * 24, cells.Count * 36, withNormals: false, withUv: false, withRgba: true, withFlags: false);
-
-            float size = 1f - 2f * Inset;
-            Vec3f sizeXyz = new Vec3f(size, size, size);
-            Vec3f center = new Vec3f();
+            // — api-notes §d.3 (MeshData.cs:665). With Uv == null the rgba attribute lands at VBO location 1,
+            // which is what blockhighlights.vsh expects ("vertexColor" at location 1) — api-notes §d.2.
+            faces = new MeshData(quads.Count * 4, quads.Count * 6, withNormals: false, withUv: false, withRgba: true, withFlags: false);
+            Span<float> xyz = stackalloc float[12];
             double maxDistSq = 0;
-
-            foreach (GhostCell c in cells)
+            foreach (FaceQuad q in quads)
             {
-                // Cube centre: cell centre. Y = projector Y + layer yOffset (spec §5a Fixed Y), centre at +0.5.
-                center.X = c.X + 0.5f;
-                center.Y = c.Y + 0.5f;
-                center.Z = c.Z + 0.5f;
-                double d = (double)c.X * c.X + (double)c.Y * c.Y + (double)c.Z * c.Z;
-                if (d > maxDistSq) maxDistSq = d;
-
-                for (int i = 0; i < 6; i++)
+                GhostMesher.Corners(q, Inset, xyz);
+                int color = ColorUtil.ColorMultiply3(q.Color, GhostMesher.Shading(q.Face));
+                int baseVert = faces.VerticesCount;
+                for (int i = 0; i < 4; i++)
                 {
-                    // BlockFacing.ALLFACES — api-notes §d.3 (BlockFacing.cs:76).
-                    BlockFacing face = BlockFacing.ALLFACES[i];
-
-                    // ModelCubeUtilExt.AddFaceSkipTex(MeshData, BlockFacing, Vec3f centerXyz, Vec3f sizeXyz, int color, float brightness)
-                    // — api-notes §d.3 (ModelCubeUtilExt.cs:92). Per-face shading from
-                    // CubeMeshUtil.DefaultBlockSideShadingsByFacing — api-notes §d.3 (CubeMeshUtil.cs:22),
-                    // exactly as BlockHighlight.cs:254-267 does.
-                    ModelCubeUtilExt.AddFaceSkipTex(mesh, face, center, sizeXyz, c.Color, CubeMeshUtil.DefaultBlockSideShadingsByFacing[face.Index]);
+                    float x = xyz[i * 3], y = xyz[i * 3 + 1], z = xyz[i * 3 + 2];
+                    // AddVertexSkipTex(float x, float y, float z, int color) — api-notes §o.1 (MeshData.cs:1158-1176).
+                    faces.AddVertexSkipTex(x, y, z, color);
+                    double d = (double)x * x + (double)y * y + (double)z * z;
+                    if (d > maxDistSq) maxDistSq = d;
                 }
+                // Two triangles, 0-1-2 / 0-2-3 — ModelCubeUtilExt.AddFaceSkipTex's own index pattern.
+                faces.AddIndex(baseVert); faces.AddIndex(baseVert + 1); faces.AddIndex(baseVert + 2);
+                faces.AddIndex(baseVert); faces.AddIndex(baseVert + 2); faces.AddIndex(baseVert + 3);
             }
-
             cullRadius = Math.Sqrt(maxDistSq) + 1.5;
-            return mesh;
+
+            lines = null;
+            if (!gridLines) return;
+
+            // Grid: darker, more opaque than the face it lies on, so it reads as the seam between two
+            // blocks. Two vertices per segment; EnumDrawMode.Lines (api-notes §l.3/§o.1, the hologram's
+            // own edge mesh uses the same path).
+            MeshData grid = new MeshData(quads.Count * 8, quads.Count * 8, withNormals: false, withUv: false, withRgba: true, withFlags: false);
+            grid.mode = EnumDrawMode.Lines;
+            foreach (FaceQuad q in quads)
+            {
+                int c = GridColor(q.Color);
+                GhostMesher.GridLines(q, Inset, (x0, y0, z0, x1, y1, z1) =>
+                {
+                    int v = grid.VerticesCount;
+                    grid.AddVertexSkipTex(x0, y0, z0, c);
+                    grid.AddVertexSkipTex(x1, y1, z1, c);
+                    grid.AddIndex(v);
+                    grid.AddIndex(v + 1);
+                });
+            }
+            lines = grid;
+        }
+
+        /// <summary>Half-brightness RGB at a firmer alpha: packed r | g&lt;&lt;8 | b&lt;&lt;16 | a&lt;&lt;24 (ColorUtil.ColorFromRgba, api-notes §d.3).</summary>
+        private static int GridColor(int packed)
+        {
+            int r = (packed & 0xFF) / 2, g = ((packed >> 8) & 0xFF) / 2, bl = ((packed >> 16) & 0xFF) / 2;
+            int a = Math.Min(255, ((packed >> 24) & 0xFF) * 3 / 2);
+            return ColorUtil.ColorFromRgba(r, g, bl, a);
         }
 
         // void OnRenderFrame(float deltaTime, EnumRenderStage stage) — api-notes §d.1 (IRenderer.cs:86).
@@ -201,6 +236,8 @@ namespace ShapeProjector
 
             // void RenderMesh(MeshRef meshRef) — api-notes §d.3 (IRenderAPI.cs:560).
             capi.Render.RenderMesh(meshRef);
+            // The grid lines share the shader and the transform; RenderMesh draws GL_LINES for a Lines VAO.
+            if (lineRef != null) capi.Render.RenderMesh(lineRef);
 
             // IShaderProgram.Stop() — IShaderProgram.cs:59.
             prog.Stop();
@@ -265,13 +302,7 @@ namespace ShapeProjector
             // (IClientEventAPI.cs:208). Both registrations (OIT primary + AfterBlit see-through).
             capi.Event.UnregisterRenderer(this, EnumRenderStage.OIT);
             capi.Event.UnregisterRenderer(this, EnumRenderStage.AfterBlit);
-
-            if (meshRef != null)
-            {
-                // void DeleteMesh(MeshRef vao) — api-notes §d.3 (IRenderAPI.cs:552).
-                capi.Render.DeleteMesh(meshRef);
-                meshRef = null;
-            }
+            DeleteMeshes();
         }
     }
 }

@@ -24,6 +24,10 @@ uniform mat4 projectionMatrix;
 uniform mat4 modelViewMatrix;
 
 out vec4 color;
+// fogandlight.fsh's applyFog reads a global rgbaFog in the fragment stage (fogandlight.fsh:233), so the
+// pair must exist on both sides exactly as vanilla blockhighlights.vsh/.fsh declare it - the second
+// half of the 2026-09-07 compile fix ("undefined variable rgbaFog" once the vertex stage compiled).
+out vec4 rgbaFog;
 
 #include vertexflagbits.ash
 #include fogandlight.vsh
@@ -33,4 +37,5 @@ void main(void)
 	color = vertexColor;
 	gl_Position = projectionMatrix * (modelViewMatrix * vec4(vertexPositionIn, 1.0));
 	glowLevel = 0.0;
+	rgbaFog = vec4(0.0);
 }

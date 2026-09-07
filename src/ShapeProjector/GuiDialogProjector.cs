@@ -4,6 +4,7 @@ using ShapeProjector.Geometry;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Config;
+using Vintagestory.API.MathTools;
 
 namespace ShapeProjector
 {
@@ -388,7 +389,9 @@ namespace ShapeProjector
             double yR = 30;
 
             // --- Layers: selector + icon toolbar + report (spec §10e "compact icon buttons with tooltips")
-            cy = Group("shapeprojector:gui-group-layers", colRx, colRw, yR, rowH + gap + 32 + gap + rowH);
+            // Report line gets two rows in the detail font: a budget report names a layer and a cut,
+            // and one row of the small font truncated it (user, 2026-09-07).
+            cy = Group("shapeprojector:gui-group-layers", colRx, colRw, yR, rowH + gap + 32 + gap + 2 * rowH);
             c.AddDropDown(layerValues, layerNames, selected, OnLayerSelected, ElementBounds.Fixed(colRx + pad, cy, colRw - 2 * pad, rowH), KeyLayer);
             Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-layers", Lang.Get("shapeprojector:gui-tip-layerlist"));
             cy += rowH + gap;
@@ -453,8 +456,8 @@ namespace ShapeProjector
                 Lang.Get("shapeprojector:gui-tip-globalminus", layerNo, RadialMathLine(layer, -1), GlobalPreview(-1)),
                 "icorminus", true, OnGlobalMinus);
             cy += 32 + gap;
-            c.AddDynamicText(lastAdjustReport, CairoFont.WhiteSmallText(), ElementBounds.Fixed(colRx + pad, cy, colRw - 2 * pad, rowH), KeyAdjust);
-            yR = cy + rowH + pad + gap * 2;
+            c.AddDynamicText(lastAdjustReport, CairoFont.WhiteDetailText(), ElementBounds.Fixed(colRx + pad, cy, colRw - 2 * pad, 2 * rowH), KeyAdjust);
+            yR = cy + 2 * rowH + pad + gap * 2;
 
             // --- Layer settings: shape + ONLY the selected shape's fields (spec §10e), then commons.
             int shapeRows = layer.Shape switch
@@ -529,7 +532,7 @@ namespace ShapeProjector
             // directly under the Y offset it extrudes upward from.
             c.AddStaticText(Lang.Get("shapeprojector:gui-thickness"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddNumberInput(I(colRx, colRw, cy), OnParamChanged, CairoFont.WhiteDetailText(), KeyThickness);
-            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-thickness", Lang.Get("shapeprojector:gui-tip-thickness", layer.MaxThickness(be.Config)));
+            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-thickness", Lang.Get("shapeprojector:gui-tip-thickness", layer.MaxThickness(be.Config)) + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.Config.maxCellsPerProjector));
             cy += rowH + gap;
             c.AddStaticText(Lang.Get("shapeprojector:gui-yoffset"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddNumberInput(I(colRx, colRw, cy), null, CairoFont.WhiteDetailText(), KeyYOffset);
@@ -537,7 +540,7 @@ namespace ShapeProjector
             cy += rowH + gap;
             c.AddStaticText(Lang.Get("shapeprojector:gui-height"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddNumberInput(I(colRx, colRw, cy), OnParamChanged, CairoFont.WhiteDetailText(), KeyHeight);
-            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-height", Lang.Get("shapeprojector:gui-tip-height"));
+            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-height", Lang.Get("shapeprojector:gui-tip-height") + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.Config.maxCellsPerProjector));
             cy += rowH + gap;
             c.AddStaticText(Lang.Get("shapeprojector:gui-verticalmode"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddDropDown(vmodeValues, vmodeNames, drape ? 1 : 0, OnVerticalModeChanged, I(colRx, colRw, cy), KeyVMode);
@@ -547,7 +550,7 @@ namespace ShapeProjector
             // depends on it.
             c.AddStaticText(Lang.Get("shapeprojector:gui-fill"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddSwitch(OnFillToggled, ElementBounds.Fixed(colRx + pad + labelW, cy, rowH, rowH), KeyFill, 25, 3);
-            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-fill", Lang.Get(drape ? "shapeprojector:gui-tip-fill-drape" : "shapeprojector:gui-tip-fill-fixed"));
+            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-fill", Lang.Get(drape ? "shapeprojector:gui-tip-fill-drape" : "shapeprojector:gui-tip-fill-fixed") + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.Config.maxCellsPerProjector));
             cy += rowH + gap;
             // Optional rows: fluid rule where the ground is resolved (Follow terrain, spec §5a — and
             // any filled layer, 2026-09-07); per-layer build feedback in Fixed Y (spec §6 "Optional per-layer").
@@ -701,9 +704,14 @@ namespace ShapeProjector
 
         private string ResolvedCenterText(ProjectorParams p)
         {
-            // Spec §3: centre = projector position + (dx, dz); a .5 means a corner/edge.
-            string cx = (be.Pos.X + p.Dx).ToString("0.#", CultureInfo.InvariantCulture);
-            string cz = (be.Pos.Z + p.Dz).ToString("0.#", CultureInfo.InvariantCulture);
+            // Spec §3: centre = projector position + (dx, dz); a .5 means a corner/edge. Shown in the
+            // coordinates the player sees everywhere else: the game's own coordinate HUD subtracts the
+            // default spawn position (HudElementCoordinates.cs:65, asBlockPos.Sub(DefaultSpawnPosition.AsBlockPos);
+            // IWorldAccessor.DefaultSpawnPosition - "usually the map middle", ~512000). Raw block
+            // coordinates were shown until 2026-09-07 (user: "about 512000 blocks off").
+            BlockPos spawn = capi.World.DefaultSpawnPosition.AsBlockPos;
+            string cx = (be.Pos.X - spawn.X + p.Dx).ToString("0.#", CultureInfo.InvariantCulture);
+            string cz = (be.Pos.Z - spawn.Z + p.Dz).ToString("0.#", CultureInfo.InvariantCulture);
             return Lang.Get("shapeprojector:gui-resolved-center", cx, cz);
         }
 
@@ -1211,6 +1219,9 @@ namespace ShapeProjector
         /// <summary>Pushes server-confirmed parameters into the dialog (called by the BE after a resync, §c.4).</summary>
         public void RefreshFrom(ProjectorParams p)
         {
+            // The server's echo is also the moment the client rebuilt its cells: if the budget cut
+            // anything, say so where the clamp reports already appear (2026-09-07).
+            if (be.BudgetReport.Length > 0) lastAdjustReport = be.BudgetReport;
             edit = p.Clone();
             if (edit.Layers.Count == 0) edit.Layers.Add(NewLayer());
             selected = Math.Clamp(selected, 0, edit.Layers.Count - 1);

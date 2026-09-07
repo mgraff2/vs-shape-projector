@@ -101,3 +101,19 @@ public class LevelFillTests
         Assert.Throws<ArgumentOutOfRangeException>(() => LevelFill.Fit(new int?[] { 0 }, 0, 1, -1));
     }
 }
+
+public class ThickeningPerformanceTests
+{
+    [Fact]
+    public void A_solid_disc_at_radius_256_rasterizes_in_well_under_a_second_per_pass()
+    {
+        // User report 2026-09-07: radius 256, thickness 250 froze the client for seconds on Apply.
+        // The peel-per-ring thickening was O(thickness x interior); the BFS replacement is linear.
+        // Generous bound for slow CI boxes; the old code took tens of seconds here.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var disc = Circle.Rasterize(Shape.Block, 256, outlineThickness: 250, maxRadius: 256);
+        sw.Stop();
+        Assert.True(disc.Count > 200_000, $"expected a near-solid disc, got {disc.Count} blocks");
+        Assert.True(sw.Elapsed.TotalSeconds < 5, $"took {sw.Elapsed.TotalSeconds:0.00}s");
+    }
+}

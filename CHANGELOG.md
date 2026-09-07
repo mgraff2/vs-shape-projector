@@ -12,7 +12,7 @@ All notable changes to Jonastech Shape Projector.
   keeps showing every figure. A projector can now be hologram-only.
 - **Model surroundings.** The hologram can also show what is already standing around the
   projector, within a radius (up to 256) and height you set, with the coloured figures drawn in
-  their true places among it. Beyond a radius of 64 the model is sampled coarser, in wider tiles,
+  their true places among it, and reaching up to 256 blocks above and below the projector. Beyond a radius of 64 the model is sampled coarser, in wider tiles,
   so a large radius stays quick. Every block in the model wears its real colour: grass green,
   stone grey, water blue, your own timber and brick as they are. Buildings appear as they
   are seen from outside: roofs, walls with their doorways and windows, and the walls beneath
@@ -46,6 +46,24 @@ All notable changes to Jonastech Shape Projector.
   typographic dashes in its comments. Buried marks within the see-through depth now show, dimmed.
 - **The surroundings model is centred on the projector.** Figures reaching past the model's
   radius, or an unloaded edge, no longer push the projector off the middle of the miniature.
+- **Huge solid figures no longer freeze the game on Apply.** Thickening a figure inward is now
+  a single pass instead of one pass per block of thickness; a radius 256 disc at full thickness
+  used to stall the client for seconds.
+- **The mark budget is explained where you can see it.** When a figure is too large to draw in
+  full, the dial now says which layer was cut and by how much, and the Thickness, Height and
+  Fill tooltips explain the limit. Before, the only word of it was a line in the log.
+- **The centre readout uses map coordinates.** The dial and the block-info panel showed the raw
+  world position, about 512000 off from what the coordinate display and the map say. They now
+  match the game's own numbers.
+- **Full detail at any size.** Marks are now drawn as merged faces instead of one little cube
+  each: only the faces you could see are drawn, and neighbouring faces of one colour become a
+  single rectangle. A radius 256 disc at full thickness, over 200,000 blocks, is a few hundred
+  rectangles and renders in full in the world and in the hologram, with no trimming and no
+  gaps. Grid lines along the block boundaries keep every mark countable (a config switch turns
+  them off for smooth sheets). The per-projector mark limit rises from 60,000 to 300,000 with it.
+- **Separate budgets.** The surroundings model has a budget of its own, so figures and
+  surroundings never take room from each other, and a projector showing neither world marks nor
+  figures in its hologram no longer computes its figures at all.
 - **Tall layers on water.** A Follow-terrain layer several blocks tall used to move only its
   bottom course when the water under it changed. The whole layer now moves together.
 - **Build feedback on tall layers.** Filling a course above the bottom one of a tall Fixed-Y
