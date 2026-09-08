@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The mod's mesher is pure over its cell list; linked here with MesherStubs.cs standing in for the game types it names. -->
+    <Compile Include="..\..\src\ShapeProjector\GhostMesher.cs" Link="Mesher\GhostMesher.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
     <Using Include="ShapeProjector.Geometry" />
   </ItemGroup>
