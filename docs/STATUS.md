@@ -1,6 +1,8 @@
 # Project status — session handoff (2026-09-07)
 
-## Release 1.2.1 — in release (2026-09-08)
+## Release 1.2.1 — published 2026-09-08 (GitHub release v1.2.1; ModDB upload by the user)
+
+FULL VERSION SWEEP PASSED against the release zip built from 29c641a (sha256 35d70078...) - 1.22.0 through 1.22.7, all 6 combos each; 1.22.0's solo combo BLOCKED once on the port right after the gate run, re-run clean.
 
 Items (19)–(21) below plus the model-size Marks line and crash-proof RegisterIcons; user-passed (acceptance-log.md). Gate, commit, sweep, tag `v1.2.1`, GitHub release; ModDB upload by hand with the updated moddb-*.html.
 
