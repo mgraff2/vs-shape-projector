@@ -140,6 +140,8 @@
 <li><strong>Fill up to level.</strong> A layer can mark every block from the ground up to its level under each column of the figure, so a pit under a platform shows exactly the fill it needs and a causeway can start at the lake bed.</li>
 <li><strong>Full detail at any size.</strong> Marks are drawn as merged faces, so a radius 256 disc at full thickness renders whole &mdash; in the world and in the miniature &mdash; with grid lines along the block boundaries so every mark stays countable.</li>
 <li><strong>Your colours.</strong> Twenty-four to pick from, each shown as itself beside its code, or type an exact hex value; and a mark opacity per projector.</li>
+<li><strong>Two looks.</strong> <em>Faces</em> draws marks as merged surfaces with grid lines, fast at any size; <em>Blocks</em> draws every mark as its own little cube, the classic look. A marks counter in the dial turns red when a figure passes the comfortable threshold for the look you chose &mdash; a warning, never a cut.</li>
+<li><strong>Freeze it.</strong> One switch stops all live updates for a projector, so a big figure can stand in a base as a centrepiece and cost nothing but its draw.</li>
 <li><strong>Named presets are saved per player, not per projector</strong>, so a shape you worked out once follows you to every projector you can edit. Load one in place of what is there, or add it on top of it.</li>
 <li><strong>Shortcuts for the repetitive part.</strong> <strong>Page Up</strong> copies the selected layer one block higher &mdash; a course per press, thirty presses for a thirty-block tower. <strong>Page Down</strong> copies it one block outward, filling toward a solid disc. <strong>+</strong> and <strong>&minus;</strong> grow or shrink every layer at once, including the hidden ones, so nothing drifts out of step.</li>
 <li><strong>Tooltips that do the arithmetic.</strong> Hover any control and it tells you what it will do to <em>the layer you have selected</em> &mdash; &quot;radius 11 &rarr; 12&quot;, &quot;Y offset +2 &rarr; +3&quot;, &quot;width and depth both +2, one block on each of the four sides&quot; &mdash; and a greyed-out button says why it is greyed out.</li>
@@ -183,9 +185,29 @@
 <td>Tallest a single layer may stand</td>
 </tr>
 <tr>
-<td><code>maxCellsPerProjector</code></td>
-<td>300000</td>
-<td>Guide blocks one projector may hold. Over the budget a layer gives up height before it gives up its shape, so an over-ambitious figure still reads as itself, and the dial says what was trimmed</td>
+<td><code>maxCellsPerProjector</code> / <code>maxCubesPerProjector</code></td>
+<td>300000 / 60000</td>
+<td>Comfortable thresholds for the Faces and Blocks looks: the dial warns past them, nothing is trimmed</td>
+</tr>
+<tr>
+<td><code>hardMaxCellsPerProjector</code> / <code>hardMaxCubesPerProjector</code></td>
+<td>4000000 / 600000</td>
+<td>Safety ceilings; the only point at which a figure is trimmed, to keep the client alive</td>
+</tr>
+<tr>
+<td><code>gridLineMaxCells</code> / <code>holoGridMaxCells</code></td>
+<td>60000 / 20000</td>
+<td>Past these, the grid lines fall back to surface outlines in the world and the miniature</td>
+</tr>
+<tr>
+<td><code>resampleColumnsPerTick</code></td>
+<td>20000</td>
+<td>Columns the water re-check visits per two-second tick</td>
+</tr>
+<tr>
+<td><code>terrainModelMinIntervalMs</code></td>
+<td>3000</td>
+<td>Least time between two rescans of the surroundings model</td>
 </tr>
 <tr>
 <td><code>maxTerrainMapRadius</code> / <code>maxTerrainMapHeight</code></td>
@@ -214,8 +236,8 @@
 </tr>
 <tr>
 <td><code>seeThroughDepth</code></td>
-<td>6</td>
-<td>How deep through terrain a guide stays visible</td>
+<td>0</td>
+<td>How deep through terrain a guide stays visible; 0 is off, 1&ndash;6 draws buried marks dimmed</td>
 </tr>
 <tr>
 <td><code>clientHideHotkey</code></td>

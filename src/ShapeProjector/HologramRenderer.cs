@@ -67,6 +67,7 @@ namespace ShapeProjector
         private readonly bool guiOpenOnly;      // config holoMode == "guiOpen" ("off" never constructs this class)
         private readonly bool mono;             // config holoStyle == "mono"
         private readonly int maxBlocks;         // previewMaxBlocks now budgets the hologram (spec §10c amendment)
+        private readonly int holoGridMaxCells;  // per-cell grid up to here, outlines only past it
         private readonly double renderDistanceSq;
 
         private MeshRef? fillRef;               // triangles: backdrop halo + mini cubes + marker
@@ -119,12 +120,14 @@ namespace ShapeProjector
             mono = cfg.holoStyle == "mono";
             highlightSelected = cfg.holoHighlightSelected;
             maxBlocks = cfg.previewMaxBlocks;
+            holoGridMaxCells = cfg.holoGridMaxCells;
             renderDistanceSq = (double)cfg.renderDistance * cfg.renderDistance;
 
             // Event-driven rebuild (spec §10c): the BE raises PreviewCellsChanged at every cell-cache
             // update — the same moments it hands cells to the world renderer. Plain C# event;
             // unsubscribed in Dispose.
             be.PreviewCellsChanged += OnCellsChanged;
+            be.PreviewTerrainChanged += OnTerrainChanged;
         }
 
         private void OnCellsChanged()
@@ -133,11 +136,17 @@ namespace ShapeProjector
             RebuildAll();
         }
 
+        /// <summary>Surroundings rescan only: figures keep their quads and tiles (2026-09-08).</summary>
+        private void OnTerrainChanged()
+        {
+            RebuildAll(terrainOnly: true);
+        }
+
         /// <summary>
         /// Full rebuild: recomputes framing/decimation from the BE's cached cells, then both meshes.
         /// Runs only on PreviewCellsChanged (never per frame).
         /// </summary>
-        private void RebuildAll()
+        private void RebuildAll(bool terrainOnly = false)
         {
             IReadOnlyList<GhostCell> cells = be.PreviewCells;
 
@@ -205,10 +214,13 @@ namespace ShapeProjector
             foreach (PreviewSegment seg in be.PreviewSegments) if (seg.LayerIndex < 0) { hasTerrain = true; break; }
             if (hasTerrain)
             {
-                int extX = Math.Max(-minX, maxX);
-                int extZ = Math.Max(-minZ, maxZ);
-                minX = -extX; maxX = extX;
-                minZ = -extZ; maxZ = extZ;
+                // ... symmetric about the figures' shared centre, which is where the model is scanned
+                // around (2026-09-08: it used to centre on the projector block).
+                int cx0 = (int)Math.Floor(be.Params.Dx + 0.5), cz0 = (int)Math.Floor(be.Params.Dz + 0.5);
+                int extX = Math.Max(cx0 - minX, maxX - cx0);
+                int extZ = Math.Max(cz0 - minZ, maxZ - cz0);
+                minX = cx0 - extX; maxX = cx0 + extX;
+                minZ = cz0 - extZ; maxZ = cz0 + extZ;
             }
 
             sizeXf = maxX + 1 - minX;
@@ -231,7 +243,7 @@ namespace ShapeProjector
             // Budget (spec §10c amendment): previewMaxBlocks caps the mini's cube count; uniform
             // decimation past it, silent.
             stride = cells.Count <= maxBlocks ? 1 : (cells.Count + maxBlocks - 1) / maxBlocks;
-            BuildDrawList(cells);
+            BuildDrawList(cells, terrainOnly);
 
             cullRadius = holoSize + 1.0;
 
@@ -254,21 +266,37 @@ namespace ShapeProjector
         /// > 1) stay cubes in the draw list. The old tiling decimation remains only as the fallback
         /// for a pathological cell set whose merged faces still outrun the budget many times over.
         /// </summary>
-        private void BuildDrawList(IReadOnlyList<GhostCell> cells)
-        {
-            drawList.Clear();
-            quads.Clear();
-            meshCells.Clear();
+        // Figures and the surroundings model are meshed separately (2026-09-08): a surroundings rescan
+        // re-meshes the model alone and reuses the figures' quads and tiles.
+        private readonly List<FaceQuad> figureQuads = new List<FaceQuad>();
+        private readonly List<FaceQuad> terrainQuads = new List<FaceQuad>();
+        private readonly List<DrawCell> figureTiles = new List<DrawCell>();
+        private readonly List<DrawCell> terrainTiles = new List<DrawCell>();
+        private readonly List<GhostCell> terrainMeshCells = new List<GhostCell>();
+        private int figureMeshCount;
 
+        private void BuildDrawList(IReadOnlyList<GhostCell> cells, bool terrainOnly)
+        {
             int? selected = highlightSelected ? lastSelected : null;
             int doneColor = GhostPalette.DoneColor;
             int monoBase = GhostPalette.Color(0);   // cyan palette entry — holoStyle "mono" (ruling 9)
 
+            if (!terrainOnly)
+            {
+                figureQuads.Clear();
+                figureTiles.Clear();
+                meshCells.Clear();
+            }
+            terrainQuads.Clear();
+            terrainTiles.Clear();
+            terrainMeshCells.Clear();
+
             foreach (PreviewSegment seg in be.PreviewSegments)
             {
                 if (!ShowSegment(seg)) continue;
-                bool isSelected = selected.HasValue && seg.LayerIndex == selected.Value;
                 bool terrain = seg.LayerIndex < 0;
+                if (!terrain && terrainOnly) continue;
+                bool isSelected = selected.HasValue && seg.LayerIndex == selected.Value;
                 for (int i = seg.CellStart; i < seg.CellStart + seg.Count; i++)
                 {
                     GhostCell c = cells[i];
@@ -280,35 +308,59 @@ namespace ShapeProjector
                     bool isDone = (c.Color & 0xFFFFFF) == (doneColor & 0xFFFFFF);
                     int baseColor = isSelected ? SelectedHue : (mono && !terrain && !isDone ? monoBase : c.Color);
                     int color = TreatColor(baseColor, isSelected);
-                    if (seg.Footprint == 1) meshCells.Add(new GhostCell(c.X, c.Y, c.Z, color));
-                    else drawList.Add(new DrawCell(c.X, c.Y, c.Z, color, seg.Footprint, seg.LayerIndex));
+                    if (seg.Footprint != 1) (terrain ? terrainTiles : figureTiles).Add(new DrawCell(c.X, c.Y, c.Z, color, seg.Footprint, seg.LayerIndex));
+                    else (terrain ? terrainMeshCells : meshCells).Add(new GhostCell(c.X, c.Y, c.Z, color));
                 }
             }
 
-            if (meshCells.Count > 0)
+            if (!terrainOnly)
             {
-                quads.AddRange(GhostMesher.Merge(meshCells));
-                if (quads.Count > maxBlocks * 6)
+                figureMeshCount = meshCells.Count;
+                if (meshCells.Count > 0)
                 {
-                    // Fallback: merged faces still far past the budget (a checkerboard, say) — tile the
-                    // block-exact cells instead, f x f in X/Z, grown until it fits.
-                    quads.Clear();
-                    int baseCount = drawList.Count;   // the sampled surroundings tiles stay
-                    int f = 2;
-                    for (; ; f++)
+                    bool blocks = be.Params.Style == DrawStyle.Blocks;   // classic look (user request 2026-09-08)
+                    bool tile;
+                    if (blocks)
                     {
-                        drawList.RemoveRange(baseCount, drawList.Count - baseCount);
-                        var seen = new HashSet<(int, int, int)>();
-                        foreach (GhostCell c in meshCells)
+                        // One cube per cell, as before the mesher; past the mini's budget, tiles.
+                        tile = meshCells.Count > maxBlocks;
+                        if (!tile) foreach (GhostCell c in meshCells) figureTiles.Add(new DrawCell(c.X, c.Y, c.Z, c.Color, 1, 0));
+                    }
+                    else
+                    {
+                        figureQuads.AddRange(GhostMesher.Merge(meshCells));
+                        tile = figureQuads.Count > maxBlocks * 6;
+                        if (tile) figureQuads.Clear();
+                    }
+                    if (tile)
+                    {
+                        // Fallback: still far past the budget (a checkerboard, or Blocks on a huge figure) —
+                        // tile the block-exact cells instead, f x f in X/Z, grown until it fits.
+                        int baseCount = figureTiles.Count;
+                        int f = 2;
+                        for (; ; f++)
                         {
-                            int kx = FloorDiv(c.X, f), kz = FloorDiv(c.Z, f);
-                            if (!seen.Add((kx, c.Y, kz))) continue;
-                            drawList.Add(new DrawCell(kx * f, c.Y, kz * f, c.Color, f, 0));
+                            figureTiles.RemoveRange(baseCount, figureTiles.Count - baseCount);
+                            var seen = new HashSet<(int, int, int)>();
+                            foreach (GhostCell c in meshCells)
+                            {
+                                int kx = FloorDiv(c.X, f), kz = FloorDiv(c.Z, f);
+                                if (!seen.Add((kx, c.Y, kz))) continue;
+                                figureTiles.Add(new DrawCell(kx * f, c.Y, kz * f, c.Color, f, 0));
+                            }
+                            if (figureTiles.Count <= maxBlocks || f >= 64) break;
                         }
-                        if (drawList.Count <= maxBlocks || f >= 64) break;
                     }
                 }
             }
+            if (terrainMeshCells.Count > 0) terrainQuads.AddRange(GhostMesher.Merge(terrainMeshCells));
+
+            quads.Clear();
+            quads.AddRange(figureQuads);
+            quads.AddRange(terrainQuads);
+            drawList.Clear();
+            drawList.AddRange(figureTiles);
+            drawList.AddRange(terrainTiles);
         }
 
         /// <summary>Which segments the mini draws: the surroundings model always; the figures only while the projector's HologramFigures switch is on (user request 2026-09-07).</summary>
@@ -348,9 +400,12 @@ namespace ShapeProjector
 
             // Merged rectangles: dark edges along every cell boundary inside them and around them —
             // the same block-by-block reading the per-cube edges gave (ruling 9's thin dark outlines).
+            // Past holoGridMaxCells, outlines only: half a million segments in a block-and-a-half cube
+            // is thousands of fragments per pixel (2026-09-08, "freezing as I pivot around the model").
+            bool fullGrid = figureMeshCount + terrainMeshCells.Count <= holoGridMaxCells;
             foreach (FaceQuad q in quads)
             {
-                GhostMesher.GridLines(q, MeshInset, (x0, y0, z0, x1, y1, z1) =>
+                Action<float, float, float, float, float, float> add = (x0, y0, z0, x1, y1, z1) =>
                 {
                     MapPoint(x0, y0, z0, out float ax, out float ay, out float az);
                     MapPoint(x1, y1, z1, out float bx, out float by, out float bz);
@@ -359,7 +414,9 @@ namespace ShapeProjector
                     mesh.AddVertexSkipTex(bx, by, bz, EdgeColor);
                     mesh.AddIndex(v);
                     mesh.AddIndex(v + 1);
-                });
+                };
+                if (fullGrid) GhostMesher.GridLines(q, MeshInset, add);
+                else GhostMesher.OutlineLines(q, MeshInset, add);
             }
 
             float half = scale * CellFill * 0.5f;
@@ -546,7 +603,7 @@ namespace ShapeProjector
             if (highlightSelected && selected != lastSelected)
             {
                 lastSelected = selected;
-                BuildDrawList(be.PreviewCells);   // treated colours live in the draw list / quads now
+                BuildDrawList(be.PreviewCells, terrainOnly: false);   // treated colours live in the draw list / quads now
                 RebuildFill(be.PreviewCells);
                 if (fillRef == null) return;
             }
@@ -599,6 +656,7 @@ namespace ShapeProjector
         public void Dispose()
         {
             be.PreviewCellsChanged -= OnCellsChanged;
+            be.PreviewTerrainChanged -= OnTerrainChanged;
             // void UnregisterRenderer(IRenderer, EnumRenderStage) — api-notes §d.1 (IClientEventAPI.cs:208).
             capi.Event.UnregisterRenderer(this, EnumRenderStage.OIT);
             DeleteMeshes();

@@ -2,6 +2,50 @@
 
 All notable changes to Jonastech Shape Projector.
 
+## 1.2.0 — 2026-09-08
+
+### Added
+
+- **Mark style.** Choose how a projector draws its marks: *Faces*, the fast merged surfaces
+  with grid lines, or *Blocks*, the original look with every mark its own little cube. Blocks
+  keeps its own, smaller budget.
+- **Freeze updates.** A switch in the Projector group stops all live updates for that projector,
+  so a big figure can stand in a base as a centrepiece without the game tracking the ground
+  under it. Apply still rebuilds it.
+- **A marks counter in the dial.** Under the layer settings, a line shows how many marks the
+  configuration will ask for, this layer and all layers, against the comfortable threshold of
+  the chosen style.
+
+### Changed
+
+- **The surroundings model is centred on the figure.** It is scanned and framed around the
+  shared centre, offset included, rather than around the projector block.
+- **A surroundings rescan no longer rebuilds the figures.** On a busy server the model rescans
+  every few seconds, and each rescan used to rebuild the whole projector, figures and world
+  mesh included; now only the model is redone and the figures are reused.
+- **Huge figures draw outlines instead of a full grid.** Past 60,000 marks in the world and
+  20,000 in the miniature, the grid lines fall back to each surface's outline; the per-cell grid
+  of a quarter-million-mark figure was a fill-rate stall that changed with the view angle.
+- **Big Follow-terrain figures no longer stall every two seconds.** The water re-check used to
+  walk every column of every draped layer on each tick; it now walks a bounded number per tick
+  and carries on next time, so a quarter-million-block figure stays smooth to move around.
+- **The surroundings model updates less often and more cheaply.** Block changes near it mark
+  it for a rescan at most every three seconds, a rebuild of the figures alone reuses the last
+  scan, and each material takes one colour instead of a slightly different one per block, so it
+  no longer shimmers.
+- **Shorter tooltips.** Every hover text is a short phrase, without repeating the field's
+  label; only the unlabelled toolbar icons keep their name line.
+- **Marks no longer show through solid blocks.** The see-through reveal, which draws marks
+  dimmed through up to six blocks of terrain, first started working in 1.1.0 and turned out to
+  be unwelcome: a block placed in front of a mark should hide it. It is off by default now; set
+  `seeThroughDepth` in the config file to 1 to 6 to have it back.
+- **Thresholds warn; they no longer trim.** The mark budgets are advisory now: past them the
+  Marks line turns red with a warning that weaker hardware may slow or stutter, and the figure is
+  still drawn in full. Only a far higher safety ceiling, set by the server, trims a figure to keep
+  the game running.
+- **Thickness is never pulled back.** A thickness larger than the figure's radius is simply
+  solid; the tooltip names the number where that happens, and the field keeps what you typed.
+
 ## 1.1.0 — 2026-09-07
 
 ### Added

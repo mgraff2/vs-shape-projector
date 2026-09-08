@@ -207,6 +207,19 @@ namespace ShapeProjector
             for (int v = q.V0; v <= q.V1; v++) Line(q, inset, q.U0, v, q.U1, v, segment);
         }
 
+        /// <summary>
+        /// Only the rectangle's outline (4 segments), for figures too big for a per-cell grid
+        /// (2026-09-08: at 250,000 marks the grid is ~500,000 segments; packed into the miniature that
+        /// is thousands of line fragments per pixel, a GPU stall that changes with the view angle).
+        /// </summary>
+        public static void OutlineLines(in FaceQuad q, float inset, Action<float, float, float, float, float, float> segment)
+        {
+            Line(q, inset, q.U0, q.V0, q.U1, q.V0, segment);
+            Line(q, inset, q.U0, q.V1, q.U1, q.V1, segment);
+            Line(q, inset, q.U0, q.V0, q.U0, q.V1, segment);
+            Line(q, inset, q.U1, q.V0, q.U1, q.V1, segment);
+        }
+
         private static void Line(in FaceQuad q, float inset, float ua, float va, float ub, float vb, Action<float, float, float, float, float, float> segment)
         {
             switch (q.Face)

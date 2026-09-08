@@ -7,6 +7,19 @@ using Vintagestory.API.MathTools;
 
 namespace ShapeProjector
 {
+    /// <summary>
+    /// How a projector's marks are drawn (user request 2026-09-08: "I loved the look of the
+    /// individual blocks"). Faces = exposed, colour-merged face rectangles with grid lines — a solid
+    /// figure of any size is a few hundred quads. Blocks = one inset cube per mark, the classic look,
+    /// six faces per cell, so it carries its own smaller budget (config maxCubesPerProjector).
+    /// Values are persisted; do not renumber.
+    /// </summary>
+    public enum DrawStyle
+    {
+        Faces = 0,
+        Blocks = 1,
+    }
+
     /// <summary>Shape kinds (spec §5). Values are persisted; do not renumber.</summary>
     public enum ShapeType
     {
@@ -360,7 +373,9 @@ namespace ShapeProjector
             ColorIndex = GhostPalette.ClampIndex(ColorIndex);
             ColorRgb = GhostPalette.SanitizeRgb(ResolveColor());
             // Lattice.RequireThickness only demands >= 1; the ceilings are this mod's cost guards.
-            Thickness = Math.Clamp(Thickness, 1, MaxThickness(cfg));
+            // Only the config ceiling: past the figure's own extent (MaxThickness) extra thickness
+            // changes nothing, and the user did not want a typed value pulled back (2026-09-08).
+            Thickness = Math.Clamp(Thickness, 1, cfg.maxOutlineThickness);
             Height = Math.Clamp(Height, 1, cfg.maxLayerHeight);
         }
 
@@ -369,8 +384,8 @@ namespace ShapeProjector
         /// to the radius"): the figure's own outer extent in blocks, or the config ceiling if that is
         /// lower. Thickness eats inward from the outer edge, so at this value the figure is solid —
         /// a disc, a filled rectangle, a filled polygon (Thickness.ThickenClosed saturates there and a
-        /// larger number changes nothing, which is why the GUI clamps to it: the field shows the
-        /// number that actually means "solid"). A ring's band cannot be wider than the ring itself;
+        /// larger number changes nothing). Informational since 2026-09-08 — the tooltip names it; the
+        /// field is no longer pulled back to it. A ring's band cannot be wider than the ring itself;
         /// a spiral repeats its track inward, so its outer radius bounds it.
         /// </summary>
         public int MaxThickness(ProjectorConfig cfg)
@@ -509,6 +524,15 @@ namespace ShapeProjector
         /// cache event the hologram rebuilds on.
         /// </summary>
         public bool HologramFigures = true;
+        /// <summary>Marks as merged faces (default) or as individual blocks — see <see cref="DrawStyle"/>. In RenderKey: the meshes differ.</summary>
+        public DrawStyle Style = DrawStyle.Faces;
+        /// <summary>
+        /// Freeze (user request 2026-09-08, "a pause refreshing button ... a centerpiece"): no live
+        /// updates at all — block changes, the water re-check, surroundings rescans and build-feedback
+        /// tints are ignored while on; the marks stay exactly as last built. Apply still rebuilds. In
+        /// RenderKey so switching it off rebuilds at once.
+        /// </summary>
+        public bool Frozen = false;
         public int TerrainMapRadius = 16;
         public int TerrainMapHeight = 8;
 
@@ -533,6 +557,7 @@ namespace ShapeProjector
                 Dx = Dx, Dz = Dz, Enabled = Enabled, HologramEnabled = HologramEnabled,
                 ProjectionEnabled = ProjectionEnabled, GhostOpacity = GhostOpacity,
                 TerrainMap = TerrainMap, TerrainMapRadius = TerrainMapRadius, TerrainMapHeight = TerrainMapHeight, HologramFigures = HologramFigures,
+                Style = Style, Frozen = Frozen,
             };
             foreach (LayerParams l in Layers) p.Layers.Add(l.Clone());
             return p;
@@ -554,6 +579,8 @@ namespace ShapeProjector
             tree.SetInt("ghostOpacity", GhostOpacity);
             tree.SetBool("terrainMap", TerrainMap);
             tree.SetBool("hologramFigures", HologramFigures);
+            tree.SetInt("drawStyle", (int)Style);
+            tree.SetBool("frozen", Frozen);
             tree.SetInt("terrainMapRadius", TerrainMapRadius);
             tree.SetInt("terrainMapHeight", TerrainMapHeight);
             tree.SetDouble("dx", Dx);
@@ -581,6 +608,8 @@ namespace ShapeProjector
             p.GhostOpacity = tree.GetInt("ghostOpacity", GhostPalette.DefaultOpacityPercent);
             p.TerrainMap = tree.GetBool("terrainMap", false);
             p.HologramFigures = tree.GetBool("hologramFigures", true);
+            p.Style = (DrawStyle)tree.GetInt("drawStyle", 0);   // absent (pre-1.2.0) → Faces
+            p.Frozen = tree.GetBool("frozen", false);
             p.TerrainMapRadius = tree.GetInt("terrainMapRadius", 16);
             p.TerrainMapHeight = tree.GetInt("terrainMapHeight", 8);
             // terrainColorRgb / waterColorRgb / terrainTrueColor (same-day keys, retired the same day —
@@ -608,6 +637,7 @@ namespace ShapeProjector
             Dx = ToHalfStep(Dx, -cfg.maxRadius, cfg.maxRadius);
             Dz = ToHalfStep(Dz, -cfg.maxRadius, cfg.maxRadius);
             GhostOpacity = Math.Clamp(GhostOpacity, MinOpacityPercent, 100);
+            if (!Enum.IsDefined(typeof(DrawStyle), Style)) Style = DrawStyle.Faces;
             TerrainMapRadius = Math.Clamp(TerrainMapRadius, 1, cfg.maxTerrainMapRadius);
             TerrainMapHeight = Math.Clamp(TerrainMapHeight, 1, cfg.maxTerrainMapHeight);
             if (Layers.Count > cfg.maxLayersPerProjector)
@@ -639,7 +669,7 @@ namespace ShapeProjector
               // is built; the model's own extent changes the cell set.
               .Append(',').Append(ProjectionEnabled ? 1 : 0).Append(',').Append(GhostOpacity)
               .Append(',').Append(TerrainMap ? 1 : 0).Append(',').Append(TerrainMapRadius).Append(',').Append(TerrainMapHeight)
-              .Append(',').Append(HologramFigures ? 1 : 0);
+              .Append(',').Append(HologramFigures ? 1 : 0).Append(',').Append((int)Style).Append(',').Append(Frozen ? 1 : 0);
             foreach (LayerParams l in Layers)
             {
                 sb.Append('|').Append((int)l.Shape)

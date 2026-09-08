@@ -112,6 +112,13 @@ namespace ShapeProjector
         /// <summary>Raised right after the world renderer received new/patched cells — the §10c
         /// "the recompute is already event-driven; the preview just subscribes" hook.</summary>
         public event Action? PreviewCellsChanged;
+        /// <summary>
+        /// Raised when ONLY the surroundings model was rebuilt (2026-09-08): the figure cells and the
+        /// world mesh are untouched, so the hologram re-meshes the model alone. Before this, a
+        /// surroundings rescan rebuilt the whole projector — figures, world mesh and all — every
+        /// terrainModelMinIntervalMs on a busy server: the "freezing every few seconds".
+        /// </summary>
+        public event Action? PreviewTerrainChanged;
         private readonly HashSet<Geometry.BlockXZ> dirtyColumns = new HashSet<Geometry.BlockXZ>();
         // System.Func fully qualified: Vintagestory.API.Common declares its own Func<T1,T2,TResult>
         // (DECOMP/api/Vintagestory.API.Common/Func.cs), ambiguous under these usings.
@@ -132,6 +139,19 @@ namespace ShapeProjector
         /// </summary>
         private bool terrainRebuildQueued;
         private const int TerrainRebuildDelayMs = 300;
+        /// <summary>
+        /// The surroundings model, cached (2026-09-08): a layer rebuild that does not touch the ground
+        /// reuses it, and block changes only mark it dirty — the rescan itself runs at most every
+        /// terrainModelMinIntervalMs. terrainKey pins the radius/reach/centre it was built for.
+        /// </summary>
+        private readonly List<GhostCell> terrainCells = new List<GhostCell>();
+        private int terrainStep = 1;
+        private string terrainKey = "";
+        private bool terrainDirty = true;
+        private long terrainBuiltAtMs = long.MinValue;
+        /// <summary>The model is centred on the figures' shared centre (2026-09-08, "centered on the projector's location, not the offset"): the cell nearest (Dx, Dz).</summary>
+        private int TerrainCenterX => (int)Math.Floor(Params.Dx + 0.5);
+        private int TerrainCenterZ => (int)Math.Floor(Params.Dz + 0.5);
         private long resampleListenerId;
         private static readonly List<GhostCell> NoCells = new List<GhostCell>();
         /// <summary>The surroundings model is built (user request 2026-09-07): projector on and the model switched on, whatever the world marks do.</summary>
@@ -152,6 +172,11 @@ namespace ShapeProjector
         /// until now the warning went to the log alone). Client-side only.
         /// </summary>
         public string BudgetReport { get; private set; } = "";
+
+        /// <summary>The advisory threshold for this projector's style (the dial warns past it; nothing is trimmed).</summary>
+        public int CellBudget => Params.Style == DrawStyle.Blocks ? Config.maxCubesPerProjector : Config.maxCellsPerProjector;
+        /// <summary>The hard ceiling for this projector's style — the only point at which a figure is trimmed (2026-09-08).</summary>
+        public int CellCeiling => Params.Style == DrawStyle.Blocks ? Config.hardMaxCubesPerProjector : Config.hardMaxCellsPerProjector;
 
         // public virtual void Initialize(ICoreAPI api) — api-notes §c.3 (BlockEntity.cs:132).
         // "called right after the block entity was spawned or right after it was loaded from a
@@ -442,9 +467,25 @@ namespace ShapeProjector
         private void RebuildGeometry(bool force)
         {
             if (renderer == null) return;
-
             string key = Params.RenderKey();
             if (!force && key == lastRenderKey) return;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            RebuildGeometryCore(key);
+            LogSlow("full rebuild", sw, cells.Count);
+        }
+
+        /// <summary>Slow-path timing to client-main.log (2026-09-08): anything over this many ms is worth a line, so a freeze report comes with numbers.</summary>
+        private const int SlowMs = 40;
+        private void LogSlow(string what, System.Diagnostics.Stopwatch sw, int count)
+        {
+            if (sw.ElapsedMilliseconds >= SlowMs)
+            {
+                Api.Logger.Notification("[shapeprojector] {0} at {1}: {2} ms ({3} cells, style {4})", what, Pos, sw.ElapsedMilliseconds, count, Params.Style);
+            }
+        }
+
+        private void RebuildGeometryCore(string key)
+        {
             lastRenderKey = key;
             BudgetReport = "";
 
@@ -532,7 +573,7 @@ namespace ShapeProjector
                 // Cell budget (Config.maxCellsPerProjector). A layer costs columns x height, so the
                 // product has to be checked here — no per-field clamp can. Height is surrendered before
                 // columns are: a shorter closed figure still reads as the shape, a half-drawn ring does not.
-                int room = Math.Max(0, Config.maxCellsPerProjector - cells.Count);
+                int room = Math.Max(0, CellCeiling - cells.Count);
                 int columns = geom.Positions.Count;
 
                 if (layer.FillToLevel)
@@ -547,7 +588,7 @@ namespace ShapeProjector
                     int fitColumns = fitHeight > 0 ? Math.Min(columns, room / fitHeight) : 0;
                     Api.Logger.Warning(
                         "[shapeprojector] Layer {0} at {1} exceeds the {2}-cell budget ({3} columns x height {4}); drawing height {5} over {6} columns.",
-                        i, Pos, Config.maxCellsPerProjector, columns, lr.Height, fitHeight, fitColumns);
+                        i, Pos, CellCeiling, columns, lr.Height, fitHeight, fitColumns);
                     AddBudgetLine(i, fitColumns, columns, fitHeight, lr.Height);
                     lr.Height = fitHeight;
                     budgetColumns = fitColumns;
@@ -596,7 +637,7 @@ namespace ShapeProjector
             // same cache the hologram reads; the world renderer gets only the prefix before it
             // (PushCells), so the model shows in the hologram with the world marks on or off.
             worldCellCount = cells.Count;
-            if (TerrainModelActive) AppendTerrainModel();
+            AppendTerrainCached();
 
             // Resolved fractional centre (projector position + dx/dz, spec §3). No world-space marker
             // cube any more (user ruling 10, docs/STATUS.md — it collided visually with the hologram);
@@ -622,6 +663,45 @@ namespace ShapeProjector
             BudgetReport = BudgetReport.Length == 0 ? line : BudgetReport + " " + line;
         }
 
+        /// <summary>Appends the surroundings model after the figure cells: rescanned when dirty or re-parameterised, from the cache otherwise.</summary>
+        private void AppendTerrainCached()
+        {
+            if (!TerrainModelActive) return;
+            string tkey = Params.TerrainMapRadius + "," + Params.TerrainMapHeight + "," + TerrainCenterX + "," + TerrainCenterZ;
+            if (terrainDirty || tkey != terrainKey)
+            {
+                int start = cells.Count;
+                AppendTerrainModel();
+                terrainCells.Clear();
+                for (int i = start; i < cells.Count; i++) terrainCells.Add(cells[i]);
+                terrainKey = tkey;
+                terrainDirty = false;
+                terrainBuiltAtMs = Api.World.ElapsedMilliseconds;
+            }
+            else if (terrainCells.Count > 0)
+            {
+                // Reuse: the ground did not change, only the figures did.
+                int start = cells.Count;
+                cells.AddRange(terrainCells);
+                previewSegments.Add(new PreviewSegment(-1, start, terrainCells.Count, 4, terrainStep));
+            }
+        }
+
+        /// <summary>
+        /// Rescans the surroundings model alone (2026-09-08): the figure cells stay, the world mesh is
+        /// not touched, and the hologram is told to re-mesh the model only (PreviewTerrainChanged).
+        /// </summary>
+        private void RebuildTerrainOnly()
+        {
+            if (renderer == null) return;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            if (cells.Count > worldCellCount) cells.RemoveRange(worldCellCount, cells.Count - worldCellCount);
+            previewSegments.RemoveAll(s => s.LayerIndex < 0);
+            AppendTerrainCached();
+            LogSlow("surroundings rescan", sw, cells.Count - worldCellCount);
+            PreviewTerrainChanged?.Invoke();
+        }
+
         /// <summary>
         /// Hands the cell cache to the world renderer — or nothing at all while the per-projector
         /// world-marks switch is off (user request 2026-09-07, "hologram only"): the hologram keeps
@@ -630,9 +710,10 @@ namespace ShapeProjector
         private void PushCells()
         {
             if (renderer == null) return;
-            if (!Params.ProjectionEnabled) { renderer.SetCells(NoCells); return; }
+            bool blocks = Params.Style == DrawStyle.Blocks;
+            if (!Params.ProjectionEnabled) { renderer.SetCells(NoCells, blocks); return; }
             // The layer prefix only — the surroundings model behind it is hologram-only geometry.
-            renderer.SetCells(worldCellCount == cells.Count ? cells : cells.GetRange(0, worldCellCount));
+            renderer.SetCells(worldCellCount == cells.Count ? cells : cells.GetRange(0, worldCellCount), blocks);
         }
 
         /// <summary>
@@ -666,7 +747,7 @@ namespace ShapeProjector
             {
                 Api.Logger.Warning(
                     "[shapeprojector] Filled layer {0} at {1} exceeds the {2}-cell budget ({3} columns, level {4}, height {5}); drawing height {6} over {7} columns.",
-                    index, Pos, Config.maxCellsPerProjector, columns, level, lr.Height, fitHeight, fitColumns);
+                    index, Pos, CellCeiling, columns, level, lr.Height, fitHeight, fitColumns);
                 AddBudgetLine(index, fitColumns, columns, fitHeight, lr.Height);
             }
 
@@ -719,7 +800,9 @@ namespace ShapeProjector
             // cost is flat in the radius. Radius 64 → step 1 (block-exact); radius 256 → step 4.
             int span = 2 * r + 1;
             int step = Math.Max(1, (span + Config.terrainModelMaxSpan - 1) / Config.terrainModelMaxSpan);
-            int size = (span + step - 1) / step;   // sampled columns per axis; sample i sits at -r + i*step
+            int size = (span + step - 1) / step;   // sampled columns per axis; sample i sits at c - r + i*step
+            int cx0 = TerrainCenterX, cz0 = TerrainCenterZ;   // the figures' shared centre, not the block
+            terrainStep = step;
             int levels = 2 * h + 1;
             const int None = int.MinValue;
             int[] top = new int[size * size];       // topmost solid (or water surface) inside the window
@@ -732,7 +815,7 @@ namespace ShapeProjector
             {
                 for (int ix = 0; ix < size; ix++)
                 {
-                    int dx = -r + ix * step, dz = -r + iz * step;
+                    int dx = cx0 - r + ix * step, dz = cz0 - r + iz * step;
                     int found = None;
                     int rainY = None;
                     bool isWater = false;
@@ -775,12 +858,21 @@ namespace ShapeProjector
             // climate/season tint applied for that position. -1 (no texture) reads as white. Only the
             // alpha is replaced (the hologram sets its own anyway).
             ICoreClientAPI tcapi = (ICoreClientAPI)Api;   // the model is built on the client only
+            // One colour per block type per rebuild, tinted at the projector's own position (2026-09-08:
+            // per-cell tinting made neighbouring cells of one material differ and the model shimmer on
+            // every rescan; one GetColor per material is also far cheaper than one per cell).
+            Dictionary<int, int> colourByBlock = new Dictionary<int, int>();
             int BlockColor(int cx, int cy, int cz, int layerAccess)
             {
                 BlockPos bp = scratchPos ??= Pos.Copy();
                 bp.X = Pos.X + cx; bp.Y = Pos.Y + cy; bp.Z = Pos.Z + cz;
-                int c = ba.GetBlock(bp, layerAccess).GetColor(tcapi, bp);
-                return (c & 0xFFFFFF) | (GhostPalette.Alpha << 24);
+                Block block = ba.GetBlock(bp, layerAccess);
+                if (!colourByBlock.TryGetValue(block.Id, out int c))
+                {
+                    c = (block.GetColor(tcapi, Pos) & 0xFFFFFF) | (GhostPalette.Alpha << 24);
+                    colourByBlock[block.Id] = c;
+                }
+                return c;
             }
             // One bit per cell of the (sampled) box: emitted once, whichever pass reaches it first.
             // System.Collections.BitArray: at reach 256 the box is 129 x 129 x 513 = 8.5M cells; a bool per
@@ -793,7 +885,7 @@ namespace ShapeProjector
                 if (emitted[idx]) return true;
                 if (cells.Count - start >= room) { truncated = true; return false; }
                 emitted[idx] = true;
-                int dx = -r + ix * step, dz = -r + iz * step;
+                int dx = cx0 - r + ix * step, dz = cz0 - r + iz * step;
                 cells.Add(new GhostCell(dx, y, dz, BlockColor(dx, y, dz, isWater ? BlockLayersAccess.Fluid : BlockLayersAccess.SolidBlocks)));
                 return true;
             }
@@ -823,7 +915,7 @@ namespace ShapeProjector
                     Neighbour(ix, iz - 1, ref floor);
                     Neighbour(ix, iz + 1, ref floor);
 
-                    int dx = -r + ix * step, dz = -r + iz * step;
+                    int dx = cx0 - r + ix * step, dz = cz0 - r + iz * step;
                     for (int y = t; y >= floor; y--)
                     {
                         // Below the top, read the block rather than assume a wall (user: "existing
@@ -852,7 +944,7 @@ namespace ShapeProjector
 
                 bool IsAir(int ix, int iz, int y)
                 {
-                    int dx = -r + ix, dz = -r + iz;
+                    int dx = cx0 - r + ix, dz = cz0 - r + iz;
                     if (IsCellOccupied(dx, y, dz)) return false;
                     BlockPos bp = scratchPos ??= Pos.Copy();
                     bp.X = Pos.X + dx; bp.Y = Pos.Y + y; bp.Z = Pos.Z + dz;
@@ -896,7 +988,7 @@ namespace ShapeProjector
                         if (nix < 0 || nix >= size || niz < 0 || niz >= size || ny < -h || ny > h) return;
                         int rn = rainTop[niz * size + nix];
                         if (rn == None || ny > rn) return;   // unloaded, or sky: pass 1's business
-                        int dx = -r + nix, dz = -r + niz;
+                        int dx = cx0 - r + nix, dz = cz0 - r + niz;
                         if (IsCellOccupied(dx, ny, dz))
                         {
                             Emit(nix, niz, ny, isWater: false);
@@ -1003,6 +1095,7 @@ namespace ShapeProjector
         /// </summary>
         private void OnClientBlockChanged(BlockPos changedPos, Block oldBlock)
         {
+            if (Params.Frozen) return;   // freeze (2026-09-08): the marks stay as last built
             bool terrain = TerrainModelActive;
             if ((!anyDrapeLayer && !anyFeedbackLayer && !anyFillLayer && !terrain) || renderer == null) return;
             // BlockPos.dimension is a public field (BlockPos.cs:29).
@@ -1018,8 +1111,10 @@ namespace ShapeProjector
             {
                 int ry = changedPos.Y - Pos.Y;
                 int r = Params.TerrainMapRadius, h = Params.TerrainMapHeight;
-                if (rx >= -r && rx <= r && rz >= -r && rz <= r && ry >= -h - 1 && ry <= h + 1)
+                int tx = rx - TerrainCenterX, tz = rz - TerrainCenterZ;
+                if (tx >= -r && tx <= r && tz >= -r && tz <= r && ry >= -h - 1 && ry <= h + 1)
                 {
+                    terrainDirty = true;
                     QueueTerrainRebuild();
                     return;
                 }
@@ -1066,14 +1161,18 @@ namespace ShapeProjector
         {
             if (terrainRebuildQueued) return;
             terrainRebuildQueued = true;
-            RegisterDelayedCallback(OnTerrainRebuild, TerrainRebuildDelayMs);
+            // Debounce, and never sooner than terrainModelMinIntervalMs after the last rescan: a busy
+            // farm, spreading grass or falling snow inside the box then costs one rescan per interval.
+            long since = Api.World.ElapsedMilliseconds - terrainBuiltAtMs;
+            int wait = (int)Math.Max(TerrainRebuildDelayMs, Config.terrainModelMinIntervalMs - since);
+            RegisterDelayedCallback(OnTerrainRebuild, wait);
         }
 
         private void OnTerrainRebuild(float dt)
         {
             terrainRebuildQueued = false;
-            if (renderer == null) return;
-            RebuildGeometry(force: true);
+            if (renderer == null || Params.Frozen) return;
+            RebuildTerrainOnly();
         }
 
         private void QueuePatch()
@@ -1092,6 +1191,13 @@ namespace ShapeProjector
         private void OnPatchCallback(float dt)
         {
             patchQueued = false;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            OnPatchCallbackCore();
+            LogSlow("column patch", sw, cells.Count);
+        }
+
+        private void OnPatchCallbackCore()
+        {
             if (renderer == null)
             {
                 dirtyColumns.Clear();
@@ -1208,52 +1314,74 @@ namespace ShapeProjector
             }
         }
 
+        /// <summary>Where the time-sliced re-sample resumes: layer index and column index within it.</summary>
+        private int resampleLayer, resampleColumn;
+
         private void OnResampleTick(float dt)
         {
-            if (renderer == null) return;
+            if (renderer == null || layerRenders.Count == 0 || Params.Frozen) return;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            OnResampleTickCore();
+            LogSlow("water re-check", sw, cells.Count);
+        }
 
+        private void OnResampleTickCore()
+        {
+
+            // Time-sliced (2026-09-08): at most resampleColumnsPerTick columns per tick, resuming where
+            // the last tick stopped, round-robin over the layers. A 250,000-column figure is covered in
+            // a dozen ticks instead of stalling every one of them.
+            int budget = Config.resampleColumnsPerTick;
             bool changed = false;
-            for (int i = 0; i < layerRenders.Count; i++)
+            int visitedLayers = 0;
+            while (budget > 0 && visitedLayers < layerRenders.Count)
             {
-                LayerRender lr = layerRenders[i];
-
-                if (lr.Fill)
+                if (resampleLayer >= layerRenders.Count) { resampleLayer = 0; resampleColumn = 0; }
+                LayerRender lr = layerRenders[resampleLayer];
+                bool drapeLayer = lr.Mode == VerticalMode.Drape;
+                if (!lr.Fill && !drapeLayer)
                 {
-                    // A filled layer's runs change length when its ground moves: compare the bases it
-                    // was built with and rebuild whole on the first difference (both vertical modes —
-                    // the fill part always rests on the ground).
-                    bool drape = lr.Mode == VerticalMode.Drape;
-                    resolveFluidAsSurface = lr.FluidSurface;
-                    IReadOnlyList<BlockXZ> fp = lr.Geom.Positions;
-                    for (int j = 0; j < fp.Count; j++)
+                    resampleLayer++; resampleColumn = 0; visitedLayers++;
+                    continue;
+                }
+
+                resolveFluidAsSurface = lr.FluidSurface;
+                IReadOnlyList<BlockXZ> positions = lr.Geom.Positions;
+                int limit = lr.Fill ? positions.Count : lr.Columns;
+                int end = Math.Min(limit, resampleColumn + budget);
+                for (int j = resampleColumn; j < end; j++)
+                {
+                    if (lr.Fill)
                     {
-                        int? surface = SurfaceHeightAt(fp[j].X, fp[j].Z);
-                        int? b = surface.HasValue ? surface.Value + 1 + (drape ? lr.YOffset : 0) : null;
-                        if (b != lr.ColBase![j])
+                        // A filled layer's runs change length when its ground moves: compare the bases
+                        // it was built with and rebuild whole on the first difference (both vertical
+                        // modes — the fill part always rests on the ground).
+                        int? surface = SurfaceHeightAt(positions[j].X, positions[j].Z);
+                        int? bse = surface.HasValue ? surface.Value + 1 + (drapeLayer ? lr.YOffset : 0) : null;
+                        if (bse != lr.ColBase![j])
                         {
+                            resampleLayer = 0; resampleColumn = 0;
                             RebuildGeometry(force: true);
                             return;
                         }
                     }
-                    continue;
-                }
-
-                if (lr.Mode != VerticalMode.Drape) continue;
-
-                resolveFluidAsSurface = lr.FluidSurface;
-                IReadOnlyList<BlockXZ> positions = lr.Geom.Positions;
-                // Only the columns that got cells (budget), and every level of each (Height stride) —
-                // the pre-2026-09-07 loop walked all positions with a stride of one and moved only
-                // the base level of a tall layer.
-                for (int j = 0; j < lr.Columns; j++)
-                {
-                    BlockXYZ r = DrapeResolver.ResolveColumn(positions[j], lr.YOffset, VerticalMode.Drape, lr.YOffset, surfaceHeightDel!);
-                    int ci = lr.CellStart + j * lr.Height;
-                    if (cells[ci].Y != r.Y)
+                    else
                     {
-                        for (int k = 0; k < lr.Height; k++) cells[ci + k] = new GhostCell(r.X, r.Y + k, r.Z, lr.Color);
-                        changed = true;
+                        // Every level of the column (Height stride), only the columns that got cells.
+                        BlockXYZ r = DrapeResolver.ResolveColumn(positions[j], lr.YOffset, VerticalMode.Drape, lr.YOffset, surfaceHeightDel!);
+                        int ci = lr.CellStart + j * lr.Height;
+                        if (cells[ci].Y != r.Y)
+                        {
+                            for (int k = 0; k < lr.Height; k++) cells[ci + k] = new GhostCell(r.X, r.Y + k, r.Z, lr.Color);
+                            changed = true;
+                        }
                     }
+                }
+                budget -= end - resampleColumn;
+                resampleColumn = end;
+                if (resampleColumn >= limit)
+                {
+                    resampleLayer++; resampleColumn = 0; visitedLayers++;
                 }
             }
             if (changed)

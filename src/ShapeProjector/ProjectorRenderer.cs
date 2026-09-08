@@ -25,6 +25,7 @@ namespace ShapeProjector
         private MeshRef? meshRef;    // merged face rectangles (triangles)
         private MeshRef? lineRef;    // cell-boundary grid over them (lines), config ghostGridLines
         private readonly bool gridLines;
+        private readonly int gridLineMaxCells;
 
         // Matrixf (namespace Vintagestory.API.Client) — api-notes §d.5 (Matrixf.cs:8,39,87,201).
         private readonly Matrixf modelViewMat = new Matrixf();
@@ -62,18 +63,22 @@ namespace ShapeProjector
             renderDistanceSq = (double)modSystem.Config.renderDistance * modSystem.Config.renderDistance;
             seeThroughDepth = modSystem.Config.seeThroughDepth;
             gridLines = modSystem.Config.ghostGridLines;
+            gridLineMaxCells = modSystem.Config.gridLineMaxCells;
         }
 
         /// <summary>
         /// Replaces the ghost geometry. Called by the block entity only when the render key changed
         /// (spec §5 "recomputed only on parameter change"). An empty list removes the mesh.
         /// </summary>
-        public void SetCells(IReadOnlyList<GhostCell> cells)
+        public void SetCells(IReadOnlyList<GhostCell> cells, bool blocks)
         {
             DeleteMeshes();
             if (cells.Count == 0) return;
 
-            BuildMeshes(cells, out MeshData faces, out MeshData? lines);
+            MeshData faces;
+            MeshData? lines = null;
+            if (blocks) faces = BuildCubeMesh(cells);
+            else BuildMeshes(cells, out faces, out lines);
 
             // MeshRef UploadMesh(MeshData data) — api-notes §d.3 (IRenderAPI.cs:525).
             meshRef = capi.Render.UploadMesh(faces);
@@ -138,19 +143,55 @@ namespace ShapeProjector
             // own edge mesh uses the same path).
             MeshData grid = new MeshData(quads.Count * 8, quads.Count * 8, withNormals: false, withUv: false, withRgba: true, withFlags: false);
             grid.mode = EnumDrawMode.Lines;
+            // Past gridLineMaxCells only the rectangle outlines are drawn: a per-cell grid over a
+            // quarter-million marks is a fill-rate stall from a glancing angle (2026-09-08).
+            bool full = cells.Count <= gridLineMaxCells;
             foreach (FaceQuad q in quads)
             {
                 int c = GridColor(q.Color);
-                GhostMesher.GridLines(q, Inset, (x0, y0, z0, x1, y1, z1) =>
+                Action<float, float, float, float, float, float> add = (x0, y0, z0, x1, y1, z1) =>
                 {
                     int v = grid.VerticesCount;
                     grid.AddVertexSkipTex(x0, y0, z0, c);
                     grid.AddVertexSkipTex(x1, y1, z1, c);
                     grid.AddIndex(v);
                     grid.AddIndex(v + 1);
-                });
+                };
+                if (full) GhostMesher.GridLines(q, Inset, add);
+                else GhostMesher.OutlineLines(q, Inset, add);
             }
             lines = grid;
+        }
+
+        /// <summary>
+        /// The classic look (ProjectorParams.Style == Blocks, user request 2026-09-08): one inset cube
+        /// per cell, exactly the pre-mesher mesh — 24 verts / 36 indices per cube, per-face shading
+        /// from CubeMeshUtil.DefaultBlockSideShadingsByFacing via ModelCubeUtilExt.AddFaceSkipTex
+        /// (api-notes §d.3, BlockHighlight.cs:254-267). Six faces a cell, so it is held to the smaller
+        /// maxCubesPerProjector budget; no grid lines (the insets are the grid).
+        /// </summary>
+        private MeshData BuildCubeMesh(IReadOnlyList<GhostCell> cells)
+        {
+            MeshData mesh = new MeshData(cells.Count * 24, cells.Count * 36, withNormals: false, withUv: false, withRgba: true, withFlags: false);
+            float size = 1f - 2f * Inset;
+            Vec3f sizeXyz = new Vec3f(size, size, size);
+            Vec3f center = new Vec3f();
+            double maxDistSq = 0;
+            foreach (GhostCell c in cells)
+            {
+                center.X = c.X + 0.5f;
+                center.Y = c.Y + 0.5f;
+                center.Z = c.Z + 0.5f;
+                double d = (double)c.X * c.X + (double)c.Y * c.Y + (double)c.Z * c.Z;
+                if (d > maxDistSq) maxDistSq = d;
+                for (int i = 0; i < 6; i++)
+                {
+                    BlockFacing face = BlockFacing.ALLFACES[i];
+                    ModelCubeUtilExt.AddFaceSkipTex(mesh, face, center, sizeXyz, c.Color, CubeMeshUtil.DefaultBlockSideShadingsByFacing[face.Index]);
+                }
+            }
+            cullRadius = Math.Sqrt(maxDistSq) + 1.5;
+            return mesh;
         }
 
         /// <summary>Half-brightness RGB at a firmer alpha: packed r | g&lt;&lt;8 | b&lt;&lt;16 | a&lt;&lt;24 (ColorUtil.ColorFromRgba, api-notes §d.3).</summary>

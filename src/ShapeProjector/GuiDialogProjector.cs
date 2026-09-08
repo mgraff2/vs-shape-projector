@@ -46,6 +46,15 @@ namespace ShapeProjector
         // 2026-09-07 user requests: world-marks switch, ghost opacity, surroundings model, fill up to level.
         private const string KeyWorldMarks = "worldmarks";
         private const string KeyHoloFigures = "holofigures";
+        // Mark style + the live marks-cost line (user request 2026-09-08: "show red where
+        // configurations exceed parameters").
+        private const string KeyStyle = "drawstyle";
+        private const string KeyFrozen = "frozen";
+        private const string KeyCost = "markcost";
+        private static readonly CairoFont CostFont = CairoFont.WhiteDetailText();
+        private static readonly CairoFont CostFontRed = CairoFont.WhiteDetailText().WithColor(new double[] { 1.0, 0.35, 0.35, 1.0 });
+        /// <summary>Per-layer rasterizer cache for the cost line: LayerGeometry re-rasterizes only when its value-equal parameters change (LayerGeometry.cs:35-58), so typing costs nothing until a value actually changes.</summary>
+        private readonly List<LayerGeometry> costGeoms = new List<LayerGeometry>();
         private const string KeyOpacity = "opacity";
         private const string KeyTerrain = "terrainmap";
         private const string KeyTerrainRadius = "terrainradius";
@@ -173,7 +182,20 @@ namespace ShapeProjector
                 // lookup misses it hands back a delegate that draws nothing, for ever (IconUtil.cs:15-32).
                 // So resolve it here and say so on a miss rather than shipping an invisible button.
                 AssetLocation loc = new AssetLocation("shapeprojector", "textures/icons/" + name + ".svg");
-                IAsset? svg = capi.Assets.TryGet(loc);
+                IAsset? svg;
+                try
+                {
+                    svg = capi.Assets.TryGet(loc);
+                }
+                catch (Exception e)
+                {
+                    // TryGet is not exception-free: FolderOrigin.TryLoadAsset reads the file from the
+                    // game's unpack cache and throws if that folder is gone under a running client
+                    // (2026-09-08 crash report: DirectoryNotFoundException on layer-add.svg). A blank
+                    // button beats a dead game.
+                    capi.Logger.Warning("[shapeprojector] Toolbar icon " + loc + " could not be read (" + e.GetType().Name + "); its button will draw blank until the next world join.");
+                    svg = null;
+                }
                 if (svg == null)
                 {
                     capi.Logger.Warning("[shapeprojector] Toolbar icon " + loc + " could not be loaded; its button would draw blank.");
@@ -282,8 +304,10 @@ namespace ShapeProjector
             // "Title\r\nBody" list hovers); the element wraps to that width and auto-heights, and a
             // "\n" in the text starts a new line.
             const int tipW = 320;
+            // Body only (user, 2026-09-08: "get rid of all the titles from the tooltips" — the field's own
+            // label already names it). Icon buttons have no label, so IconBtn keeps the name line.
             void Tip(ElementBounds b, string titleKey, string body) =>
-                c.AddHoverText(Lang.Get(titleKey) + "\n" + body, CairoFont.WhiteDetailText(), tipW, b);
+                c.AddHoverText(body, CairoFont.WhiteDetailText(), tipW, b);
 
             // Colour picker block (user request 2026-09-07: colours must be SEEN, never just named or
             // coded): a label + dropdown whose entries each show their colour and hex code (ColorList),
@@ -318,8 +342,8 @@ namespace ShapeProjector
             double yL = 30;
 
             // --- Projector (spec §10e: on/off, resolved center, offsets)
-            // 11 plain rows: on, hologram, figures, world marks, opacity, model, radius, height, centre, dx, dz.
-            double cy = Group("shapeprojector:gui-group-projector", colLx, colLw, yL, 11 * rowH + 10 * gap);
+            // 13 plain rows: on, hologram, figures, world marks, opacity, style, freeze, model, radius, height, centre, dx, dz.
+            double cy = Group("shapeprojector:gui-group-projector", colLx, colLw, yL, 13 * rowH + 12 * gap);
             c.AddStaticText(Lang.Get("shapeprojector:gui-projector-enabled"), CairoFont.WhiteSmallText(), L(colLx, cy))
              .AddSwitch(null, ElementBounds.Fixed(colLx + pad + labelW, cy, rowH, rowH), KeyProjEnabled, 25, 3);
             Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-projector-enabled", Lang.Get("shapeprojector:gui-tip-projenabled"));
@@ -341,6 +365,16 @@ namespace ShapeProjector
             c.AddStaticText(Lang.Get("shapeprojector:gui-opacity"), CairoFont.WhiteSmallText(), L(colLx, cy))
              .AddNumberInput(I(colLx, colLw, cy), OnOffsetChanged, CairoFont.WhiteDetailText(), KeyOpacity);
             Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-opacity", Lang.Get("shapeprojector:gui-tip-opacity", ProjectorParams.MinOpacityPercent, GhostPalette.DefaultOpacityPercent));
+            cy += rowH + gap;
+            string[] styleValues = { "faces", "blocks" };
+            string[] styleNames = { Lang.Get("shapeprojector:gui-style-faces"), Lang.Get("shapeprojector:gui-style-blocks") };
+            c.AddStaticText(Lang.Get("shapeprojector:gui-drawstyle"), CairoFont.WhiteSmallText(), L(colLx, cy))
+             .AddDropDown(styleValues, styleNames, edit.Style == DrawStyle.Blocks ? 1 : 0, OnStyleChanged, I(colLx, colLw, cy), KeyStyle);
+            Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-drawstyle", Lang.Get("shapeprojector:gui-tip-drawstyle", be.Config.maxCellsPerProjector, be.Config.maxCubesPerProjector));
+            cy += rowH + gap;
+            c.AddStaticText(Lang.Get("shapeprojector:gui-frozen"), CairoFont.WhiteSmallText(), L(colLx, cy))
+             .AddSwitch(null, ElementBounds.Fixed(colLx + pad + labelW, cy, rowH, rowH), KeyFrozen, 25, 3);
+            Tip(Rowb(colLx, colLw, cy), "shapeprojector:gui-frozen", Lang.Get("shapeprojector:gui-tip-frozen"));
             cy += rowH + gap;
             c.AddStaticText(Lang.Get("shapeprojector:gui-terrainmap"), CairoFont.WhiteSmallText(), L(colLx, cy))
              .AddSwitch(null, ElementBounds.Fixed(colLx + pad + labelW, cy, rowH, rowH), KeyTerrain, 25, 3);
@@ -408,7 +442,7 @@ namespace ShapeProjector
                 CairoFont f = CairoFont.WhiteSmallText();
                 if (!on) f.Color = new double[] { 0.45, 0.45, 0.45, 0.5 };
                 c.AddIconButton("sp-" + icon, f, pressed => { if (pressed && on && !composing) action(); }, b, key);
-                Tip(b.FlatCopy(), titleKey, body);
+                c.AddHoverText(Lang.Get(titleKey) + "\n" + body, CairoFont.WhiteDetailText(), tipW, b.FlatCopy());   // unlabelled: keep the name
                 bx += 34;
                 toolbarStates.Add((key, on));
             }
@@ -473,7 +507,7 @@ namespace ShapeProjector
             // optional rows: fluid rule (Follow terrain, or any filled layer), build feedback (Fixed Y).
             int optRows = (drape || fill ? 1 : 0) + (drape ? 0 : 1);
             // The colour block is two rows (dropdown + hex), one more than the old colour dropdown.
-            int settingsRows = 1 + shapeRows + 7 + optRows + 1;
+            int settingsRows = 1 + shapeRows + 7 + optRows + 1 + 2;   // + the marks-cost line (two rows)
             cy = Group("shapeprojector:gui-group-layersettings", colRx, colRw, yR, settingsRows * rowH + (settingsRows - 1) * gap);
             c.AddStaticText(Lang.Get("shapeprojector:gui-shape"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddDropDown(shapeValues, shapeNames, ShapeDropdownIndex(layer), OnShapeChanged, I(colRx, colRw, cy), KeyShape);
@@ -532,7 +566,7 @@ namespace ShapeProjector
             // directly under the Y offset it extrudes upward from.
             c.AddStaticText(Lang.Get("shapeprojector:gui-thickness"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddNumberInput(I(colRx, colRw, cy), OnParamChanged, CairoFont.WhiteDetailText(), KeyThickness);
-            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-thickness", Lang.Get("shapeprojector:gui-tip-thickness", layer.MaxThickness(be.Config)) + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.Config.maxCellsPerProjector));
+            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-thickness", Lang.Get("shapeprojector:gui-tip-thickness", layer.MaxThickness(be.Config)) + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.CellBudget));
             cy += rowH + gap;
             c.AddStaticText(Lang.Get("shapeprojector:gui-yoffset"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddNumberInput(I(colRx, colRw, cy), null, CairoFont.WhiteDetailText(), KeyYOffset);
@@ -540,7 +574,7 @@ namespace ShapeProjector
             cy += rowH + gap;
             c.AddStaticText(Lang.Get("shapeprojector:gui-height"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddNumberInput(I(colRx, colRw, cy), OnParamChanged, CairoFont.WhiteDetailText(), KeyHeight);
-            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-height", Lang.Get("shapeprojector:gui-tip-height") + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.Config.maxCellsPerProjector));
+            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-height", Lang.Get("shapeprojector:gui-tip-height") + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.CellBudget));
             cy += rowH + gap;
             c.AddStaticText(Lang.Get("shapeprojector:gui-verticalmode"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddDropDown(vmodeValues, vmodeNames, drape ? 1 : 0, OnVerticalModeChanged, I(colRx, colRw, cy), KeyVMode);
@@ -550,7 +584,7 @@ namespace ShapeProjector
             // depends on it.
             c.AddStaticText(Lang.Get("shapeprojector:gui-fill"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddSwitch(OnFillToggled, ElementBounds.Fixed(colRx + pad + labelW, cy, rowH, rowH), KeyFill, 25, 3);
-            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-fill", Lang.Get(drape ? "shapeprojector:gui-tip-fill-drape" : "shapeprojector:gui-tip-fill-fixed") + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.Config.maxCellsPerProjector));
+            Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-fill", Lang.Get(drape ? "shapeprojector:gui-tip-fill-drape" : "shapeprojector:gui-tip-fill-fixed") + "\n" + Lang.Get("shapeprojector:gui-tip-budget", be.CellBudget));
             cy += rowH + gap;
             // Optional rows: fluid rule where the ground is resolved (Follow terrain, spec §5a — and
             // any filled layer, 2026-09-07); per-layer build feedback in Fixed Y (spec §6 "Optional per-layer").
@@ -573,7 +607,13 @@ namespace ShapeProjector
             c.AddStaticText(Lang.Get("shapeprojector:gui-enabled"), CairoFont.WhiteSmallText(), L(colRx, cy))
              .AddSwitch(null, ElementBounds.Fixed(colRx + pad + labelW, cy, rowH, rowH), KeyEnabled, 25, 3);
             Tip(Rowb(colRx, colRw, cy), "shapeprojector:gui-enabled", Lang.Get("shapeprojector:gui-tip-enabled"));
-            yR = cy + rowH + pad + gap * 2;
+            cy += rowH + gap;
+            // Marks-cost line: what this configuration will ask of the projector's budget, from the
+            // real rasterizer, red when it exceeds the current style's budget or a field was capped.
+            var (costText, costOver) = MarkCost();
+            c.AddDynamicText(costText, costOver ? CostFontRed : CostFont, ElementBounds.Fixed(colRx + pad, cy, colRw - 2 * pad, 2 * rowH), KeyCost);   // two rows: it wraps
+            Tip(ElementBounds.Fixed(colRx + pad, cy, colRw - 2 * pad, 2 * rowH), "shapeprojector:gui-cost-title", Lang.Get("shapeprojector:gui-tip-cost"));
+            yR = cy + 2 * rowH + pad + gap * 2;
 
             // ================= Apply / Close, persistent bottom-right (spec §10e) =================
             double yB = Math.Max(yL, yR) + gap;
@@ -602,6 +642,7 @@ namespace ShapeProjector
             c.GetSwitch(KeyHolo).On = edit.HologramEnabled;
             c.GetSwitch(KeyWorldMarks).On = edit.ProjectionEnabled;
             c.GetSwitch(KeyHoloFigures).On = edit.HologramFigures;
+            c.GetSwitch(KeyFrozen).On = edit.Frozen;
             GuiElementNumberInput opac = c.GetNumberInput(KeyOpacity); opac.Interval = 5f; opac.IntMode = true; opac.SetValue(edit.GhostOpacity);
             c.GetSwitch(KeyTerrain).On = edit.TerrainMap;
             GuiElementNumberInput tr = c.GetNumberInput(KeyTerrainRadius); tr.Interval = 1f; tr.IntMode = true; tr.SetValue(edit.TerrainMapRadius);
@@ -739,6 +780,60 @@ namespace ShapeProjector
             {
                 SingleComposer.GetDynamicText(KeyEffective)?.SetNewText(EffectiveSizeText(edit, layer), false, true);
             }
+            GuiElementDynamicText? cost = SingleComposer.GetDynamicText(KeyCost);
+            if (cost != null)
+            {
+                var (text, over) = MarkCost();
+                cost.Font = over ? CostFontRed : CostFont;   // GuiElementTextBase.Font is the field the recompose reads
+                cost.SetNewText(text, false, true);
+            }
+        }
+
+        /// <summary>
+        /// The marks this configuration will ask for, from the Geometer's own rasterizer on cached
+        /// per-layer geometry: every enabled layer's columns x height (fill and the surroundings model
+        /// are ground-dependent and noted rather than counted), against the advisory threshold of the
+        /// style the projector is set to. Red (over = true) past it, with a performance warning — the
+        /// figure is still drawn in full up to the hard ceiling (2026-09-08).
+        /// </summary>
+        private (string text, bool over) MarkCost()
+        {
+            ProjectorConfig cfg = be.Config;
+            int budget = edit.Style == DrawStyle.Blocks ? cfg.maxCubesPerProjector : cfg.maxCellsPerProjector;
+            ShapeCenter center;
+            try { center = new ShapeCenter(edit.Dx, edit.Dz); }
+            catch (ArgumentException) { return ("", false); }
+
+            long total = 0, thisLayer = 0;
+            bool anyFill = false;
+            while (costGeoms.Count < edit.Layers.Count) costGeoms.Add(new LayerGeometry());
+            for (int i = 0; i < edit.Layers.Count; i++)
+            {
+                LayerParams l = edit.Layers[i];
+                if (!edit.Enabled || !l.Enabled) continue;
+                ShapeSpec? spec = l.ToShapeSpec();
+                if (spec == null) continue;
+                LayerGeometry g = costGeoms[i];
+                g.Update(new LayerParameters(spec, center, cfg.maxRadius, Math.Clamp(l.Thickness, 1, cfg.maxOutlineThickness)));
+                if (g.Error != null) continue;
+                long n = (long)g.Positions.Count * Math.Max(1, l.Height);
+                total += n;
+                if (i == selected) thisLayer = n;
+                if (l.FillToLevel) anyFill = true;
+            }
+
+            bool over = total > budget;
+            string text = Lang.Get(over ? "shapeprojector:gui-cost-over" : "shapeprojector:gui-cost",
+                total.ToString("N0", CultureInfo.InvariantCulture), budget.ToString("N0", CultureInfo.InvariantCulture), thisLayer.ToString("N0", CultureInfo.InvariantCulture));
+            if (anyFill) text += " " + Lang.Get("shapeprojector:gui-cost-fill");
+            return (text, over);
+        }
+
+        private void OnStyleChanged(string code, bool selectedFlag)
+        {
+            if (composing) return;
+            ReadInputsInto(edit);
+            UpdateDynamicTexts();   // the budget the cost line is measured against changed
         }
 
         // ------------------------------------------------------------------ reading the elements
@@ -754,6 +849,8 @@ namespace ShapeProjector
             p.HologramEnabled = c.GetSwitch(KeyHolo).On;
             p.ProjectionEnabled = c.GetSwitch(KeyWorldMarks).On;
             p.HologramFigures = c.GetSwitch(KeyHoloFigures).On;
+            p.Style = c.GetDropDown(KeyStyle)?.SelectedValue == "blocks" ? DrawStyle.Blocks : DrawStyle.Faces;
+            p.Frozen = c.GetSwitch(KeyFrozen).On;
             p.GhostOpacity = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyOpacity).GetValue()), ProjectorParams.MinOpacityPercent, 100);
             p.TerrainMap = c.GetSwitch(KeyTerrain).On;
             p.TerrainMapRadius = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyTerrainRadius).GetValue()), 1, be.Config.maxTerrainMapRadius);
@@ -797,7 +894,9 @@ namespace ShapeProjector
             layer.YOffset = (int)Math.Round(c.GetNumberInput(KeyYOffset).GetValue());
             // Thickness tops out at the figure's own extent (2026-09-07): the shape fields above were
             // just read, so MaxThickness sees the current radius.
-            layer.Thickness = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyThickness).GetValue()), 1, layer.MaxThickness(be.Config));
+            // Only the config ceilings (2026-09-08: nothing is pulled back to the figure's own extent;
+            // past it extra thickness simply changes nothing, and the tooltip says where that is).
+            layer.Thickness = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyThickness).GetValue()), 1, be.Config.maxOutlineThickness);
             layer.Height = Math.Clamp((int)Math.Round(c.GetNumberInput(KeyHeight).GetValue()), 1, be.Config.maxLayerHeight);
             GuiElementSwitch? fillSw = c.GetSwitch(KeyFill);
             if (fillSw != null) layer.FillToLevel = fillSw.On;
