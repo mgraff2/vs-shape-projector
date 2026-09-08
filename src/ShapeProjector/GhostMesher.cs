@@ -12,7 +12,15 @@ namespace ShapeProjector
     /// far side for +X/+Y/+Z, its near side for the others); U/V are half-open cell ranges in the
     /// two in-plane axes: UP/DOWN u = x, v = z; EAST/WEST u = z, v = y; NORTH/SOUTH u = x, v = y.
     /// </summary>
-    public readonly record struct FaceQuad(int Face, int Slice, int U0, int V0, int U1, int V1, int Color);
+    /// <para>
+    /// <see cref="Boundary"/> flags which of the rectangle's four edges are the figure's real edge —
+    /// no same-colour cell beyond it, in the face's plane, anywhere along the edge: bit 0 = the U0
+    /// edge, bit 1 = U1, bit 2 = V0, bit 3 = V1. Those edges are inset like the plane is; seams
+    /// between merged rectangles stay flush (2026-09-08, "triangles on the corners": plane-only
+    /// insets left every outer corner with a 0.05 overhang of the top over the sides and a 0.05
+    /// lip of the sides above the top).
+    /// </para>
+    public readonly record struct FaceQuad(int Face, int Slice, int U0, int V0, int U1, int V1, int Color, int Boundary = 0);
 
     /// <summary>
     /// Greedy face merging for ghost cells (user request 2026-09-07: "full detail even with up to
@@ -51,6 +59,14 @@ namespace ShapeProjector
             4 or 5 => (x, z, y),
             1 or 3 => (z, y, x),
             _ => (x, y, z),
+        };
+
+        /// <summary>Inverse of <see cref="Project"/>: the cell at (u, v) in a face's slice.</summary>
+        private static (int x, int y, int z) Unproject(int face, int u, int v, int slice) => face switch
+        {
+            4 or 5 => (u, slice, v),
+            1 or 3 => (slice, v, u),
+            _ => (u, v, slice),
         };
 
         /// <summary>
@@ -130,11 +146,43 @@ namespace ShapeProjector
                             int row = (v + r) * w;
                             for (int i = 0; i < run; i++) grid[row + u + i] = 0;
                         }
-                        quads.Add(new FaceQuad(face, slice, u0 + u, v0 + v, u0 + u + run, v0 + v + rows, col));
+                        int qu0 = u0 + u, qv0 = v0 + v, qu1 = qu0 + run, qv1 = qv0 + rows;
+                        // Boundary edges: no same-colour cell just beyond the edge, in this plane, at
+                        // any point along it. (A same-colour cell there whose own face is hidden still
+                        // counts as "beyond": the figure continues, so the edge is a seam, not a rim.)
+                        int boundary = 0;
+                        if (EdgeIsBoundary(colour, col, face, slice, qu0 - 1, qu0 - 1, qv0, qv1 - 1)) boundary |= 1;
+                        if (EdgeIsBoundary(colour, col, face, slice, qu1, qu1, qv0, qv1 - 1)) boundary |= 2;
+                        if (EdgeIsBoundary(colour, col, face, slice, qu0, qu1 - 1, qv0 - 1, qv0 - 1)) boundary |= 4;
+                        if (EdgeIsBoundary(colour, col, face, slice, qu0, qu1 - 1, qv1, qv1)) boundary |= 8;
+                        quads.Add(new FaceQuad(face, slice, qu0, qv0, qu1, qv1, col, boundary));
                     }
                 }
             }
             return quads;
+        }
+
+        /// <summary>True when no same-colour cell lies in the rectangle [ua..ub] x [va..vb] of this face's plane.</summary>
+        private static bool EdgeIsBoundary(Dictionary<long, int> colour, int col, int face, int slice, int ua, int ub, int va, int vb)
+        {
+            for (int u = ua; u <= ub; u++)
+            {
+                for (int v = va; v <= vb; v++)
+                {
+                    var (x, y, z) = Unproject(face, u, v, slice);
+                    if (colour.TryGetValue(Key(x, y, z), out int other) && other == col) return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>The rectangle's in-plane extents with the inset applied on its boundary edges only.</summary>
+        private static void Extents(in FaceQuad q, float inset, out float a0, out float a1, out float b0, out float b1)
+        {
+            a0 = q.U0 + ((q.Boundary & 1) != 0 ? inset : 0f);
+            a1 = q.U1 - ((q.Boundary & 2) != 0 ? inset : 0f);
+            b0 = q.V0 + ((q.Boundary & 4) != 0 ? inset : 0f);
+            b1 = q.V1 - ((q.Boundary & 8) != 0 ? inset : 0f);
         }
 
         /// <summary>
@@ -142,12 +190,13 @@ namespace ShapeProjector
         /// that face (CubeMeshUtil.CubeVertices, face rows of 4 — the same order ModelCubeUtilExt.AddFaceSkipTex
         /// walks), so an index pattern of 0,1,2 / 0,2,3 makes two triangles. <paramref name="inset"/>
         /// pulls the plane inward along the normal (the inset cubes used 0.05: a ghost face coplanar with
-        /// a real block face would z-fight); in-plane extents stay flush so rectangles that share a seam
-        /// join without a gap.
+        /// a real block face would z-fight) and pulls the rectangle's BOUNDARY edges inward by the same
+        /// amount, so the figure's top, bottom and sides meet exactly at its corners; seams between
+        /// merged rectangles stay flush and join without a gap.
         /// </summary>
         public static void Corners(in FaceQuad q, float inset, Span<float> xyz)
         {
-            float a0 = q.U0, a1 = q.U1, b0 = q.V0, b1 = q.V1;
+            Extents(q, inset, out float a0, out float a1, out float b0, out float b1);
             switch (q.Face)
             {
                 case 0:   // NORTH, z = slice (near side), (u,v) = (x,y): (-,-) (-,+) (+,+) (+,-)
@@ -201,10 +250,11 @@ namespace ShapeProjector
         /// </summary>
         public static void GridLines(in FaceQuad q, float inset, Action<float, float, float, float, float, float> segment)
         {
-            // Lines at every integer u in [U0, U1] spanning V0..V1, and every integer v in [V0, V1]
-            // spanning U0..U1 — the outline is the first/last of each.
-            for (int u = q.U0; u <= q.U1; u++) Line(q, inset, u, q.V0, u, q.V1, segment);
-            for (int v = q.V0; v <= q.V1; v++) Line(q, inset, q.U0, v, q.U1, v, segment);
+            // Lines at every integer u in [U0, U1] spanning the (inset) v extent, and every integer v
+            // spanning the u extent — the outline is the first/last of each, on the inset edges.
+            Extents(q, inset, out float a0, out float a1, out float b0, out float b1);
+            for (int u = q.U0; u <= q.U1; u++) Line(q, inset, Math.Clamp(u, a0, a1), b0, Math.Clamp(u, a0, a1), b1, segment);
+            for (int v = q.V0; v <= q.V1; v++) Line(q, inset, a0, Math.Clamp(v, b0, b1), a1, Math.Clamp(v, b0, b1), segment);
         }
 
         /// <summary>
@@ -214,10 +264,11 @@ namespace ShapeProjector
         /// </summary>
         public static void OutlineLines(in FaceQuad q, float inset, Action<float, float, float, float, float, float> segment)
         {
-            Line(q, inset, q.U0, q.V0, q.U1, q.V0, segment);
-            Line(q, inset, q.U0, q.V1, q.U1, q.V1, segment);
-            Line(q, inset, q.U0, q.V0, q.U0, q.V1, segment);
-            Line(q, inset, q.U1, q.V0, q.U1, q.V1, segment);
+            Extents(q, inset, out float a0, out float a1, out float b0, out float b1);
+            Line(q, inset, a0, b0, a1, b0, segment);
+            Line(q, inset, a0, b1, a1, b1, segment);
+            Line(q, inset, a0, b0, a0, b1, segment);
+            Line(q, inset, a1, b0, a1, b1, segment);
         }
 
         private static void Line(in FaceQuad q, float inset, float ua, float va, float ub, float vb, Action<float, float, float, float, float, float> segment)

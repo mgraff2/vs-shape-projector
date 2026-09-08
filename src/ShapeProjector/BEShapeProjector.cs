@@ -173,6 +173,9 @@ namespace ShapeProjector
         /// </summary>
         public string BudgetReport { get; private set; } = "";
 
+        /// <summary>Cells the surroundings model produced on the last build (0 when off) — shown on the dial's Marks line so an empty model is visible as such (2026-09-08: reach 1 gave five cells and looked like a fault).</summary>
+        public int ModelCellCount => Math.Max(0, cells.Count - worldCellCount);
+
         /// <summary>The advisory threshold for this projector's style (the dial warns past it; nothing is trimmed).</summary>
         public int CellBudget => Params.Style == DrawStyle.Blocks ? Config.maxCubesPerProjector : Config.maxCellsPerProjector;
         /// <summary>The hard ceiling for this projector's style — the only point at which a figure is trimmed (2026-09-08).</summary>
@@ -638,6 +641,9 @@ namespace ShapeProjector
             // (PushCells), so the model shows in the hologram with the world marks on or off.
             worldCellCount = cells.Count;
             AppendTerrainCached();
+            // Always-on one-liner (2026-09-08, "the environment isn't drawing"): what the model did.
+            Api.Logger.Notification("[shapeprojector] rebuild at {0}: {1} figure cells, {2} model cells (model {3}, radius {4}, reach {5}, centre {6},{7}, frozen {8}, style {9})",
+                Pos, worldCellCount, cells.Count - worldCellCount, Params.TerrainMap ? "on" : "off", Params.TerrainMapRadius, Params.TerrainMapHeight, TerrainCenterX, TerrainCenterZ, Params.Frozen, Params.Style);
 
             // Resolved fractional centre (projector position + dx/dz, spec §3). No world-space marker
             // cube any more (user ruling 10, docs/STATUS.md — it collided visually with the hologram);

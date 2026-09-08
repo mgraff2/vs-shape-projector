@@ -826,6 +826,7 @@ namespace ShapeProjector
             string text = Lang.Get(over ? "shapeprojector:gui-cost-over" : "shapeprojector:gui-cost",
                 total.ToString("N0", CultureInfo.InvariantCulture), budget.ToString("N0", CultureInfo.InvariantCulture), thisLayer.ToString("N0", CultureInfo.InvariantCulture));
             if (anyFill) text += " " + Lang.Get("shapeprojector:gui-cost-fill");
+            if (edit.TerrainMap) text += " " + Lang.Get("shapeprojector:gui-cost-model", be.ModelCellCount.ToString("N0", CultureInfo.InvariantCulture));
             return (text, over);
         }
 

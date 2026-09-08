@@ -23,8 +23,19 @@ namespace ShapeProjector
         private readonly ICoreClientAPI capi;
         private readonly BlockPos pos;
         private MeshRef? meshRef;    // merged face rectangles (triangles)
-        private MeshRef? lineRef;    // cell-boundary grid over them (lines), config ghostGridLines
+        /// <summary>
+        /// Cell-boundary grid over the rectangles (lines), config ghostGridLines — ONE mesh per face
+        /// direction (BlockFacing index), because lines cannot be back-face culled the way the faces
+        /// are: without this the underside's grid showed through the top face displaced by parallax
+        /// (2026-09-08, "how do we expect all these lines to line up?"). Per frame a direction is drawn
+        /// only if the camera is on the outward side of that direction's nearest plane
+        /// (<see cref="lineBound"/>) — every face of that direction is back-facing otherwise.
+        /// </summary>
+        private readonly MeshRef?[] lineRefs = new MeshRef?[6];
+        private readonly float[] lineBound = new float[6];
         private readonly bool gridLines;
+        /// <summary>Set by SetCells: Blocks style keeps every cube face (the classic dense look); Faces style culls back faces.</summary>
+        private bool blocksStyle;
         private readonly int gridLineMaxCells;
 
         // Matrixf (namespace Vintagestory.API.Client) — api-notes §d.5 (Matrixf.cs:8,39,87,201).
@@ -76,13 +87,14 @@ namespace ShapeProjector
             if (cells.Count == 0) return;
 
             MeshData faces;
-            MeshData? lines = null;
+            MeshData?[] lines = new MeshData?[6];
+            blocksStyle = blocks;
             if (blocks) faces = BuildCubeMesh(cells);
-            else BuildMeshes(cells, out faces, out lines);
+            else BuildMeshes(cells, out faces, lines);
 
             // MeshRef UploadMesh(MeshData data) — api-notes §d.3 (IRenderAPI.cs:525).
             meshRef = capi.Render.UploadMesh(faces);
-            if (lines != null) lineRef = capi.Render.UploadMesh(lines);
+            for (int d = 0; d < 6; d++) if (lines[d] != null) lineRefs[d] = capi.Render.UploadMesh(lines[d]!);
         }
 
         private void DeleteMeshes()
@@ -90,8 +102,26 @@ namespace ShapeProjector
             // void DeleteMesh(MeshRef vao) — "Should always be called at the end of a meshes lifetime"
             // — api-notes §d.3 (IRenderAPI.cs:552).
             if (meshRef != null) { capi.Render.DeleteMesh(meshRef); meshRef = null; }
-            if (lineRef != null) { capi.Render.DeleteMesh(lineRef); lineRef = null; }
+            for (int d = 0; d < 6; d++)
+            {
+                if (lineRefs[d] != null) { capi.Render.DeleteMesh(lineRefs[d]!); lineRefs[d] = null; }
+            }
         }
+
+        /// <summary>
+        /// Whether any face of direction <paramref name="d"/> can face the camera: the camera (block-local)
+        /// lies on the outward side of the direction's nearest plane. Conservative — a direction is
+        /// skipped only when every one of its faces is back-facing.
+        /// </summary>
+        private bool LinesVisible(int d, double cx, double cy, double cz) => d switch
+        {
+            0 => cz < lineBound[0],   // NORTH (-Z): camera north of the northernmost north face
+            1 => cx > lineBound[1],   // EAST (+X)
+            2 => cz > lineBound[2],   // SOUTH (+Z)
+            3 => cx < lineBound[3],   // WEST (-X)
+            4 => cy > lineBound[4],   // UP
+            _ => cy < lineBound[5],   // DOWN
+        };
 
         /// <summary>
         /// Builds the ghost meshes in block-local space (origin = projector block corner) from the
@@ -106,7 +136,7 @@ namespace ShapeProjector
         /// The old 0.05 cube inset survives as the plane inset of each rectangle: a ghost face coplanar
         /// with a real block face would z-fight.
         /// </summary>
-        private void BuildMeshes(IReadOnlyList<GhostCell> cells, out MeshData faces, out MeshData? lines)
+        private void BuildMeshes(IReadOnlyList<GhostCell> cells, out MeshData faces, MeshData?[] lines)
         {
             List<FaceQuad> quads = GhostMesher.Merge(cells);
 
@@ -135,19 +165,22 @@ namespace ShapeProjector
             }
             cullRadius = Math.Sqrt(maxDistSq) + 1.5;
 
-            lines = null;
             if (!gridLines) return;
 
             // Grid: darker, more opaque than the face it lies on, so it reads as the seam between two
             // blocks. Two vertices per segment; EnumDrawMode.Lines (api-notes §l.3/§o.1, the hologram's
-            // own edge mesh uses the same path).
-            MeshData grid = new MeshData(quads.Count * 8, quads.Count * 8, withNormals: false, withUv: false, withRgba: true, withFlags: false);
-            grid.mode = EnumDrawMode.Lines;
+            // own edge mesh uses the same path). One mesh per face direction, plus that direction's
+            // nearest plane, so OnRenderFrame can skip directions whose every face is back-facing.
+            for (int d = 0; d < 6; d++) lineBound[d] = (d == 0 || d == 3 || d == 5) ? float.MinValue : float.MaxValue;
             // Past gridLineMaxCells only the rectangle outlines are drawn: a per-cell grid over a
             // quarter-million marks is a fill-rate stall from a glancing angle (2026-09-08).
             bool full = cells.Count <= gridLineMaxCells;
             foreach (FaceQuad q in quads)
             {
+                int d = q.Face;
+                MeshData grid = lines[d] ??= NewLineMesh(quads.Count);
+                float plane = (d == 0 || d == 3 || d == 5) ? q.Slice + Inset : q.Slice + 1 - Inset;
+                lineBound[d] = (d == 0 || d == 3 || d == 5) ? Math.Max(lineBound[d], plane) : Math.Min(lineBound[d], plane);
                 int c = GridColor(q.Color);
                 Action<float, float, float, float, float, float> add = (x0, y0, z0, x1, y1, z1) =>
                 {
@@ -160,7 +193,13 @@ namespace ShapeProjector
                 if (full) GhostMesher.GridLines(q, Inset, add);
                 else GhostMesher.OutlineLines(q, Inset, add);
             }
-            lines = grid;
+        }
+
+        private static MeshData NewLineMesh(int quadCount)
+        {
+            MeshData grid = new MeshData(quadCount * 2, quadCount * 2, withNormals: false, withUv: false, withRgba: true, withFlags: false);
+            grid.mode = EnumDrawMode.Lines;
+            return grid;
         }
 
         /// <summary>
@@ -275,10 +314,25 @@ namespace ShapeProjector
                 .ReverseMul(capi.Render.CameraMatrixOriginf);
             prog.UniformMatrix("modelViewMatrix", modelViewMat.Values);   // Matrixf.Values — Matrixf.cs:8
 
+            // Faces style (2026-09-08, user: "overlaps with the faces on the edges"): a mark is a closed
+            // translucent slab — top, bottom and sides — and the OIT stage draws back faces too
+            // (cull-face OFF, ClientPlatformWindows.cs:1685), so from any angle the bottom face lands
+            // beside the top face on screen and the double-blended overlap reads as slanted fins
+            // along every edge. Back faces are culled for this draw only: the rectangles follow the
+            // engine's own outward winding (CubeMeshUtil.CubeVertices via GhostMesher.Corners), so a
+            // slab reads as one surface, at half the fill cost. The cube style keeps all six faces —
+            // that density is the classic look. IRenderAPI.GlEnableCullFace / GlDisableCullFace.
+            if (!blocksStyle) capi.Render.GlEnableCullFace();
             // void RenderMesh(MeshRef meshRef) — api-notes §d.3 (IRenderAPI.cs:560).
             capi.Render.RenderMesh(meshRef);
-            // The grid lines share the shader and the transform; RenderMesh draws GL_LINES for a Lines VAO.
-            if (lineRef != null) capi.Render.RenderMesh(lineRef);
+            if (!blocksStyle) capi.Render.GlDisableCullFace();   // back to the OIT stage's state
+            // The grid lines share the shader and the transform; RenderMesh draws GL_LINES for a Lines
+            // VAO. Only the directions that can face the camera (block-local camera position).
+            double lcx = cameraPos.X - pos.X, lcy = cameraPos.Y - pos.InternalY, lcz = cameraPos.Z - pos.Z;
+            for (int d = 0; d < 6; d++)
+            {
+                if (lineRefs[d] != null && LinesVisible(d, lcx, lcy, lcz)) capi.Render.RenderMesh(lineRefs[d]!);
+            }
 
             // IShaderProgram.Stop() — IShaderProgram.cs:59.
             prog.Stop();

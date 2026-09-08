@@ -2,6 +2,24 @@
 
 All notable changes to Jonastech Shape Projector.
 
+## 1.2.1 — 2026-09-08
+
+### Fixed
+
+- **Grid lines of hidden faces no longer show through.** The underside's grid and the far
+  sides' grid were drawn regardless and appeared displaced through the top face; only the
+  directions facing you are drawn now.
+- **The Marks line shows the surroundings model's size.** "model 1,240 cells" beside the count,
+  so a model that is on but empty (reach set too small, say) is visible as such.
+- **Little triangles at mark corners in the Faces style.** Each surface was pulled inward on its
+  own but stayed full-width, so at every outer corner the top overhung the sides by a sliver
+  and the sides poked above the top. Surfaces now shrink at the figure's real edges as well, so
+  top, bottom and sides meet exactly; seams between merged surfaces stay flush.
+- **Slanted fins along mark edges in the Faces style.** A mark is a closed translucent slab and
+  the game's transparency pass drew its underside too, so from an angle the top and bottom faces
+  overlapped on screen and blended twice along every edge. Back faces are no longer drawn for
+  Faces; the Blocks style keeps all six faces of each cube, which is its look.
+
 ## 1.2.0 — 2026-09-08
 
 ### Added

@@ -80,7 +80,8 @@ public class GhostMesherTests
                 for (int a = 0; a < 3; a++) if (xyz[i * 3 + a] != xyz[j * 3 + a]) differing++;
                 Assert.True(differing == 1, $"corners {i}->{j} of {q} differ in {differing} axes");
             }
-            // The rectangle's in-plane extents match the quad.
+            // The rectangle's in-plane extents match the quad (at zero inset).
+            GhostMesher.Corners(q, 0f, xyz);
             int uAxis = q.Face switch { 4 or 5 => 0, 1 or 3 => 2, _ => 0 };
             int vAxis = q.Face switch { 4 or 5 => 2, _ => 1 };
             float uMin = float.MaxValue, uMax = float.MinValue, vMin = float.MaxValue, vMax = float.MinValue;
@@ -90,6 +91,40 @@ public class GhostMesherTests
                 vMin = Math.Min(vMin, xyz[i * 3 + vAxis]); vMax = Math.Max(vMax, xyz[i * 3 + vAxis]);
             }
             Assert.Equal(q.U0, uMin); Assert.Equal(q.U1, uMax); Assert.Equal(q.V0, vMin); Assert.Equal(q.V1, vMax);
+
+            // Boundary flags: an edge is a boundary exactly when no same-colour cell lies beyond it in-plane.
+            (int, int, int) Cell(int u, int v) => q.Face switch { 4 or 5 => (u, q.Slice, v), 1 or 3 => (q.Slice, v, u), _ => (u, v, q.Slice) };
+            bool Beyond(int ua, int ub, int va, int vb)
+            {
+                for (int u = ua; u <= ub; u++) for (int v = va; v <= vb; v++)
+                    if (set.TryGetValue(Cell(u, v), out int col) && col == q.Color) return true;
+                return false;
+            }
+            Assert.Equal(!Beyond(q.U0 - 1, q.U0 - 1, q.V0, q.V1 - 1), (q.Boundary & 1) != 0);
+            Assert.Equal(!Beyond(q.U1, q.U1, q.V0, q.V1 - 1), (q.Boundary & 2) != 0);
+            Assert.Equal(!Beyond(q.U0, q.U1 - 1, q.V0 - 1, q.V0 - 1), (q.Boundary & 4) != 0);
+            Assert.Equal(!Beyond(q.U0, q.U1 - 1, q.V1, q.V1), (q.Boundary & 8) != 0);
+        }
+    }
+
+    [Fact]
+    public void A_single_cell_insets_all_edges_so_its_faces_meet_at_the_corners()
+    {
+        var cells = new List<GhostCell> { new GhostCell(3, 0, 5, 0x11223344) };
+        var quads = GhostMesher.Merge(cells);
+        Assert.Equal(6, quads.Count);
+        Span<float> xyz = stackalloc float[12];
+        foreach (var q in quads)
+        {
+            Assert.Equal(15, q.Boundary);
+            GhostMesher.Corners(q, 0.05f, xyz);
+            for (int i = 0; i < 12; i += 3)
+            {
+                // Every corner lies on the inset cube [3.05,3.95] x [0.05,0.95] x [5.05,5.95].
+                Assert.True(xyz[i] >= 3.05f - 1e-5 && xyz[i] <= 3.95f + 1e-5, $"x {xyz[i]}");
+                Assert.True(xyz[i + 1] >= 0.05f - 1e-5 && xyz[i + 1] <= 0.95f + 1e-5, $"y {xyz[i + 1]}");
+                Assert.True(xyz[i + 2] >= 5.05f - 1e-5 && xyz[i + 2] <= 5.95f + 1e-5, $"z {xyz[i + 2]}");
+            }
         }
     }
 

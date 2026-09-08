@@ -5,7 +5,7 @@ figure, and it casts a luminous guide onto the world — circles, rings, ellipse
 regular polygons, triangles and spirals, in layers around one shared centre. It builds nothing
 itself. It only shows you where.
 
-**Version 1.2.0**, for Vintage Story 1.22.0–1.22.7. Dual-side: the server owns the parameters, the
+**Version 1.2.1**, for Vintage Story 1.22.0–1.22.7. Dual-side: the server owns the parameters, the
 client draws them, so **everyone on the server needs it installed**. The design is in
 [docs/shape-projector-mod-spec.md](docs/shape-projector-mod-spec.md).
 

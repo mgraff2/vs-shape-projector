@@ -182,6 +182,7 @@
   "shapeprojector:gui-cost": "Marks {0} · this layer {2} · comfortable to {1}",
   "shapeprojector:gui-cost-over": "Marks {0} · this layer {2} · past {1}, may stutter",
   "shapeprojector:gui-cost-fill": "· fill counted on Apply",
+  "shapeprojector:gui-cost-model": "· model {0} cells (as applied)",
   "shapeprojector:gui-tip-cost": "Marks this setup draws. Red: past the threshold, still drawn",
   "shapeprojector:gui-worldmarks-enabled": "World marks",
   "shapeprojector:gui-tip-worldmarks": "Full-size marks in the world",
