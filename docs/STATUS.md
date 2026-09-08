@@ -1,6 +1,8 @@
 # Project status — session handoff (2026-09-07)
 
-## Release 1.2.0 — in release (2026-09-08)
+## Release 1.2.0 — published 2026-09-08 (GitHub release v1.2.0; ModDB upload by the user)
+
+FULL VERSION SWEEP PASSED against the release zip built from c3a857e (sha256 f32ca80b...) - 1.22.0 through 1.22.7, all 6 combos each, one version per chunk, no blocks.
 
 Ruling 9f items (12)–(18) below; user-passed in game (acceptance-log.md). Sweep, tag `v1.2.0`, GitHub
 release, then the ModDB upload by hand with the updated moddb-*.html files.
