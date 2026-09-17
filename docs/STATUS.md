@@ -1,5 +1,11 @@
 # Project status — session handoff (2026-09-07)
 
+## Release 1.2.2 — swept, not yet published (2026-09-17)
+
+FULL VERSION SWEEP PASSED against the release zip built from 9280194 (sha256 67468db6...) - 1.22.0 through 1.22.7, all 6 combos each, no BLOCKED or SETUP rows, first run.
+
+One fix: marks inside placed blocks showed through them past ~17 blocks (engine Blockhighlights clip-w push vs the 0.05 inset; api-notes "World-pass shader"). World pass now uses projectorworld.{vsh,fsh}, engine program as compile fallback; user-verified in game 2026-09-17. Gate 6/6, commit 9280194. Remaining: tag `v1.2.2`, GitHub release, ModDB upload by hand; the user's server still ships 1.2.1 until its Mods folder gets the new zip.
+
 ## Release 1.2.1 — published 2026-09-08 (GitHub release v1.2.1; ModDB upload by the user)
 
 FULL VERSION SWEEP PASSED against the release zip built from 29c641a (sha256 35d70078...) - 1.22.0 through 1.22.7, all 6 combos each; 1.22.0's solo combo BLOCKED once on the port right after the gate run, re-run clean.
