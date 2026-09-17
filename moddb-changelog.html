@@ -1,55 +1,55 @@
 <!-- Paste into the "changelog" field of the ModDB release. Newest version first;
      keep older entries so the page reads as a history. -->
 
-<p><strong>Jonastech Shape Projector 1.2.2 &mdash; for Vintage Story 1.22.x</strong></p>
+<p><strong>Jonastech Shape Projector 1.2.2 - for Vintage Story 1.22.x</strong></p>
 <ul>
 <li><strong>Marks no longer show through the blocks you build on them.</strong> A mark inside a placed block became visible through it once you stood more than about 17 blocks away, whatever the block was made of. The game&#39;s selection-highlight shader, which the marks borrowed, nudges everything a hair toward the camera, and that hair grows with distance until it beats the small gap the marks keep inside their cell. The marks now draw with their own shader without the nudge, so a filled cell hides its mark at every distance.</li>
 </ul>
 
-<p><strong>Jonastech Shape Projector 1.2.1 &mdash; for Vintage Story 1.22.x</strong></p>
+<p><strong>Jonastech Shape Projector 1.2.1 - for Vintage Story 1.22.x</strong></p>
 <ul>
 <li><strong>Clean edges in the Faces style.</strong> Back faces are no longer drawn, so a mark reads as one surface instead of blending twice along its edges; surfaces now shrink at the figure&#39;s real edges so top, bottom and sides meet exactly at the corners; and only the grid lines of faces you can see are drawn, so the underside&#39;s grid no longer shows through the top.</li>
 <li><strong>The Marks line shows the surroundings model&#39;s size</strong>, so a model that is on but empty (reach set too small) is visible as such.</li>
 <li>The dial no longer crashes the game if the mod&#39;s unpacked files vanish while it is running.</li>
 </ul>
 
-<p><strong>Jonastech Shape Projector 1.2.0 &mdash; for Vintage Story 1.22.x</strong></p>
+<p><strong>Jonastech Shape Projector 1.2.0 - for Vintage Story 1.22.x</strong></p>
 <ul>
 <li><strong>Mark style.</strong> Choose <em>Faces</em>, the fast merged surfaces with grid lines, or <em>Blocks</em>, the original look with every mark its own little cube.</li>
-<li><strong>Freeze updates.</strong> One switch stops all live updates for a projector, so a big figure can stand in a base as a centrepiece without the game tracking the ground under it. Apply still rebuilds it.</li>
-<li><strong>A marks counter in the dial</strong>, computed as you type, that turns red past the comfortable threshold for the chosen style. Thresholds warn; they no longer trim &mdash; a figure is drawn in full up to a far higher safety ceiling.</li>
-<li><strong>Smoother with huge figures.</strong> A surroundings rescan no longer rebuilds the figures; the water re-check is spread over ticks instead of stalling every two seconds; grids fall back to outlines past sixty thousand marks; the model updates at most every three seconds and one colour per material.</li>
-<li><strong>The surroundings model is centred on the figure</strong>, offset included, not on the projector block.</li>
+<li><strong>Freeze updates.</strong> One switch stops all live updates for a projector, so a big figure can stand in a base as a centerpiece without the game tracking the ground under it. Apply still rebuilds it.</li>
+<li><strong>A marks counter in the dial</strong>, computed as you type, that turns red past the comfortable threshold for the chosen style. Thresholds warn; they no longer trim - a figure is drawn in full up to a far higher safety ceiling.</li>
+<li><strong>Smoother with huge figures.</strong> A surroundings rescan no longer rebuilds the figures; the water re-check is spread over ticks instead of stalling every two seconds; grids fall back to outlines past sixty thousand marks; the model updates at most every three seconds and one color per material.</li>
+<li><strong>The surroundings model is centered on the figure</strong>, offset included, not on the projector block.</li>
 <li><strong>Marks no longer show through solid blocks</strong> by default; the see-through reveal is opt-in in the config.</li>
 <li><strong>Short tooltips</strong>, phrases rather than paragraphs, without repeating each field&#39;s label.</li>
 </ul>
 
-<p><strong>Jonastech Shape Projector 1.1.0 &mdash; for Vintage Story 1.22.x</strong></p>
+<p><strong>Jonastech Shape Projector 1.1.0 - for Vintage Story 1.22.x</strong></p>
 <ul>
-<li><strong>Full detail at any size.</strong> Marks are drawn as merged faces now, not one little cube each, so a radius 256 disc at full thickness &mdash; over 200,000 blocks &mdash; renders whole, in the world and in the miniature, with grid lines along the block boundaries so every mark stays countable. The per-projector mark limit rises from 60,000 to 300,000 with it.</li>
-<li><strong>A model of your land in the miniature.</strong> Switch on <em>Model surroundings</em> and the hologram also shows what already stands around the projector &mdash; ground, buildings, walls under their eaves, water &mdash; every block in its real colour, with the figures drawn in their true places among it. Radius up to 256 (coarser tiles past 64) and reach up to 256 blocks above and below. Hide the figures and it is a survey of the land alone.</li>
+<li><strong>Full detail at any size.</strong> Marks are drawn as merged faces now, not one little cube each, so a radius 256 disc at full thickness - over 200,000 blocks - renders whole, in the world and in the miniature, with grid lines along the block boundaries so every mark stays countable. The per-projector mark limit rises from 60,000 to 300,000 with it.</li>
+<li><strong>A model of your land in the miniature.</strong> Switch on <em>Model surroundings</em> and the hologram also shows what already stands around the projector - ground, buildings, walls under their eaves, water - every block in its real color, with the figures drawn in their true places among it. Radius up to 256 (coarser tiles past 64) and reach up to 256 blocks above and below. Hide the figures and it is a survey of the land alone.</li>
 <li><strong>Fill up to level.</strong> A layer can mark every block from the ground up to its level under each column of the figure: a pit under a platform shows exactly the fill it needs, and with the fluid rule off the fill starts at the lake bed. In Follow terrain the level is the highest ground under the figure.</li>
 <li><strong>Thickness up to the radius</strong>, at which point the figure is solid; the field names the number that means solid for the figure you are editing.</li>
-<li><strong>Colour picker.</strong> Twenty-four colours, each entry showing the colour itself beside its hex code, a hex field for an exact value, and a preview square that always shows the colour in use.</li>
+<li><strong>Color picker.</strong> Twenty-four colors, each entry showing the color itself beside its hex code, a hex field for an exact value, and a preview square that always shows the color in use.</li>
 <li><strong>Mark opacity</strong> per projector, and a <strong>World marks</strong> switch so a projector can be hologram-only.</li>
 <li><strong>Seeing marks through the ground works now.</strong> The through-terrain reveal had never actually switched on; its shader failed quietly on every client. Buried marks within the see-through depth now show, dimmed.</li>
-<li><strong>Fixes.</strong> A tall stack of layers no longer makes the block-info panel swallow your clicks; the centre readout uses map coordinates instead of raw world position; huge solid figures no longer freeze the game on Apply; tall layers on water and build feedback on tall walls update every course; and when a figure is too large to draw in full, the dial says which layer was trimmed and by how much.</li>
+<li><strong>Fixes.</strong> A tall stack of layers no longer makes the block-info panel swallow your clicks; the center readout uses map coordinates instead of raw world position; huge solid figures no longer freeze the game on Apply; tall layers on water and build feedback on tall walls update every course; and when a figure is too large to draw in full, the dial says which layer was trimmed and by how much.</li>
 </ul>
 
-<p><strong>Jonastech Shape Projector 1.0.0 &mdash; for Vintage Story 1.22.x</strong></p>
+<p><strong>Jonastech Shape Projector 1.0.0 - for Vintage Story 1.22.x</strong></p>
 <ul>
-<li><strong>First release.</strong> A craftable block that casts building guides onto the world in light. Place it, right-click it, dial in a figure. It places nothing and breaks nothing &mdash; it only shows you where.</li>
+<li><strong>First release.</strong> A craftable block that casts building guides onto the world in light. Place it, right-click it, dial in a figure. It places nothing and breaks nothing - it only shows you where.</li>
 <li><strong>Six shapes:</strong> circle, ring, ellipse, rectangle, regular polygon (three sides being the triangle) and Archimedean spiral. A ring draws both of its circles and leaves the band between them empty, which is the moat you dig.</li>
-<li><strong>Up to forty-eight layers around one shared centre</strong>, so concentric is the default state rather than something you achieve. The centre moves in half-block steps &mdash; on a block for an odd diameter, on the seam for an even one &mdash; and may sit well away from the projector, so the instrument stands beside the work rather than in the middle of it.</li>
+<li><strong>Up to forty-eight layers around one shared center</strong>, so concentric is the default state rather than something you achieve. The center moves in half-block steps - on a block for an odd diameter, on the seam for an even one - and may sit well away from the projector, so the instrument stands beside the work rather than in the middle of it.</li>
 <li><strong>Thickness per layer.</strong> Mark a figure several blocks broad in one layer instead of stacking several a block apart. The band grows inward, so the outer edge stays exactly where the radius puts it.</li>
 <li><strong>Height per layer.</strong> Stand a figure several blocks tall in one layer, so a thirty-block round tower is one layer rather than thirty. In Follow terrain each column measures from its own ground, so a wall of even height rises over uneven land.</li>
 <li><strong>Follow terrain.</strong> The outline lies on the surface like a rope laid out by hand and follows the floor down as you excavate, so a dig line is never lost halfway through the digging. Water is yours to rule per layer: rest on the surface and mark the bank, or look through to the bed and mark the bottom.</li>
-<li><strong>Fixed height</strong> for the level work &mdash; wall tops, floors, platforms. Where the earth swallows the line, cut down to it; where it hangs in air, fill up to it.</li>
+<li><strong>Fixed height</strong> for the level work - wall tops, floors, platforms. Where the earth swallows the line, cut down to it; where it hangs in air, fill up to it.</li>
 <li><strong>Marks turn green as you fill them</strong>, so the figure completes in front of you and what is left is obvious at a glance. Every level of a tall layer is checked separately, so a half-built wall greens as far up as it is finished.</li>
 <li><strong>A holographic miniature</strong> of the whole design floats above the block, world-aligned so north in the mini is north in the world. Read a forty-layer plan without walking it. Switchable on its own without stopping the projection.</li>
 <li><strong>Named presets</strong>, saved per player rather than per projector, so a shape worked out once follows you to every projector you can edit. Load one in place of what is there, or add it on top.</li>
-<li><strong>Shortcuts for the repetitive part:</strong> <strong>Page Up</strong> copies the selected layer a course higher, <strong>Page Down</strong> copies it a block outward toward a filled disc, and <strong>+</strong> / <strong>&minus;</strong> resize every layer at once &mdash; hidden layers included, so nothing drifts out of step. A layer that would shrink past its minimum is left alone and says so.</li>
-<li><strong>Every control explains itself.</strong> Hovering a button tells you what it will do to the layer you have selected, with the arithmetic worked out &mdash; &quot;radius 11 &rarr; 12&quot;, &quot;Y offset +2 &rarr; +3&quot; &mdash; and a greyed-out button says why it is greyed out.</li>
+<li><strong>Shortcuts for the repetitive part:</strong> <strong>Page Up</strong> copies the selected layer a course higher, <strong>Page Down</strong> copies it a block outward toward a filled disc, and <strong>+</strong> / <strong>&minus;</strong> resize every layer at once - hidden layers included, so nothing drifts out of step. A layer that would shrink past its minimum is left alone and says so.</li>
+<li><strong>Every control explains itself.</strong> Hovering a button tells you what it will do to the layer you have selected, with the arithmetic worked out - &quot;radius 11 &rarr; 12&quot;, &quot;Y offset +2 &rarr; +3&quot; - and a greyed-out button says why it is greyed out.</li>
 <li><strong>O hides every projection for you alone</strong>, rebindable; other players still see theirs.</li>
 <li><strong>A configured projector keeps its layers</strong> when broken and replaced, or carried with Carry On.</li>
 <li><strong>Server-authoritative.</strong> Radius, layer count, thickness, height, the guide-block budget, render distance and the miniature are all set in <code>ModConfig/shapeprojector.json</code>; a client cannot ask for a figure the server has not agreed to.</li>

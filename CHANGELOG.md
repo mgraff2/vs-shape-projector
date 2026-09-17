@@ -2,7 +2,7 @@
 
 All notable changes to Jonastech Shape Projector.
 
-## 1.2.2 — 2026-09-17
+## 1.2.2 - 2026-09-17
 
 ### Fixed
 
@@ -13,7 +13,7 @@ All notable changes to Jonastech Shape Projector.
   small gap the marks keep inside their cell. The marks now draw with their own shader without
   the nudge, so a filled cell hides its mark at every distance.
 
-## 1.2.1 — 2026-09-08
+## 1.2.1 - 2026-09-08
 
 ### Fixed
 
@@ -31,7 +31,7 @@ All notable changes to Jonastech Shape Projector.
   overlapped on screen and blended twice along every edge. Back faces are no longer drawn for
   Faces; the Blocks style keeps all six faces of each cube, which is its look.
 
-## 1.2.0 — 2026-09-08
+## 1.2.0 - 2026-09-08
 
 ### Added
 
@@ -39,7 +39,7 @@ All notable changes to Jonastech Shape Projector.
   with grid lines, or *Blocks*, the original look with every mark its own little cube. Blocks
   keeps its own, smaller budget.
 - **Freeze updates.** A switch in the Projector group stops all live updates for that projector,
-  so a big figure can stand in a base as a centrepiece without the game tracking the ground
+  so a big figure can stand in a base as a centerpiece without the game tracking the ground
   under it. Apply still rebuilds it.
 - **A marks counter in the dial.** Under the layer settings, a line shows how many marks the
   configuration will ask for, this layer and all layers, against the comfortable threshold of
@@ -47,8 +47,8 @@ All notable changes to Jonastech Shape Projector.
 
 ### Changed
 
-- **The surroundings model is centred on the figure.** It is scanned and framed around the
-  shared centre, offset included, rather than around the projector block.
+- **The surroundings model is centered on the figure.** It is scanned and framed around the
+  shared center, offset included, rather than around the projector block.
 - **A surroundings rescan no longer rebuilds the figures.** On a busy server the model rescans
   every few seconds, and each rescan used to rebuild the whole projector, figures and world
   mesh included; now only the model is redone and the figures are reused.
@@ -60,7 +60,7 @@ All notable changes to Jonastech Shape Projector.
   and carries on next time, so a quarter-million-block figure stays smooth to move around.
 - **The surroundings model updates less often and more cheaply.** Block changes near it mark
   it for a rescan at most every three seconds, a rebuild of the figures alone reuses the last
-  scan, and each material takes one colour instead of a slightly different one per block, so it
+  scan, and each material takes one color instead of a slightly different one per block, so it
   no longer shimmers.
 - **Shorter tooltips.** Every hover text is a short phrase, without repeating the field's
   label; only the unlabelled toolbar icons keep their name line.
@@ -75,7 +75,7 @@ All notable changes to Jonastech Shape Projector.
 - **Thickness is never pulled back.** A thickness larger than the figure's radius is simply
   solid; the tooltip names the number where that happens, and the field keeps what you typed.
 
-## 1.1.0 — 2026-09-07
+## 1.1.0 - 2026-09-07
 
 ### Added
 
@@ -84,13 +84,13 @@ All notable changes to Jonastech Shape Projector.
 - **World marks switch.** Turn the full-size marks off while the hologram above the projector
   keeps showing every figure. A projector can now be hologram-only.
 - **Model surroundings.** The hologram can also show what is already standing around the
-  projector, within a radius (up to 256) and height you set, with the coloured figures drawn in
+  projector, within a radius (up to 256) and height you set, with the colored figures drawn in
   their true places among it, and reaching up to 256 blocks above and below the projector. Beyond a radius of 64 the model is sampled coarser, in wider tiles,
-  so a large radius stays quick. Every block in the model wears its real colour: grass green,
-  stone grey, water blue, your own timber and brick as they are. Buildings appear as they
+  so a large radius stays quick. Every block in the model wears its real color: grass green,
+  stone gray, water blue, your own timber and brick as they are. Buildings appear as they
   are seen from outside: roofs, walls with their doorways and windows, and the walls beneath
   eaves and overhangs, but never the inside of a closed room. Land is green and water surfaces are blue by default, and each has its own
-  colour picker. A model of your home and of the work at once. It lives in the hologram only,
+  color picker. A model of your home and of the work at once. It lives in the hologram only,
   whether the world marks are on or off.
 - **Figures in hologram switch.** Hide the figures inside the hologram while the surroundings
   model stays, and the miniature becomes a survey of the land alone.
@@ -98,10 +98,10 @@ All notable changes to Jonastech Shape Projector.
   column of the figure. A pit under a platform shows exactly the fill it needs, and with the
   fluid rule off the fill starts at the lake bed, for a causeway. In Follow terrain the level is
   the highest ground under the figure, so the whole figure levels up to its highest point.
-- **Colour picker.** A layer's colour is now chosen from a list of twenty-four colours, each
-  entry showing the colour itself beside its hex code. Beside it a hex field takes an exact code
-  and a preview square always shows the colour in use.
-  Older projectors and presets keep their colours.
+- **Color picker.** A layer's color is now chosen from a list of twenty-four colors, each
+  entry showing the color itself beside its hex code. Beside it a hex field takes an exact code
+  and a preview square always shows the color in use.
+  Older projectors and presets keep their colors.
 - **Thickness up to the radius.** A figure's thickness now runs all the way to its own radius, at
   which point it is solid: a disc, a filled square, a filled polygon. The field tells you the
   number that means solid for the figure you are editing.
@@ -117,7 +117,7 @@ All notable changes to Jonastech Shape Projector.
 - **Seeing marks through the ground works now.** The through-terrain reveal had never
   actually switched on: its shader failed to compile on every client, quietly, because of two
   typographic dashes in its comments. Buried marks within the see-through depth now show, dimmed.
-- **The surroundings model is centred on the projector.** Figures reaching past the model's
+- **The surroundings model is centered on the projector.** Figures reaching past the model's
   radius, or an unloaded edge, no longer push the projector off the middle of the miniature.
 - **Huge solid figures no longer freeze the game on Apply.** Thickening a figure inward is now
   a single pass instead of one pass per block of thickness; a radius 256 disc at full thickness
@@ -125,11 +125,11 @@ All notable changes to Jonastech Shape Projector.
 - **The mark budget is explained where you can see it.** When a figure is too large to draw in
   full, the dial now says which layer was cut and by how much, and the Thickness, Height and
   Fill tooltips explain the limit. Before, the only word of it was a line in the log.
-- **The centre readout uses map coordinates.** The dial and the block-info panel showed the raw
+- **The center readout uses map coordinates.** The dial and the block-info panel showed the raw
   world position, about 512000 off from what the coordinate display and the map say. They now
   match the game's own numbers.
 - **Full detail at any size.** Marks are now drawn as merged faces instead of one little cube
-  each: only the faces you could see are drawn, and neighbouring faces of one colour become a
+  each: only the faces you could see are drawn, and neighbouring faces of one color become a
   single rectangle. A radius 256 disc at full thickness, over 200,000 blocks, is a few hundred
   rectangles and renders in full in the world and in the hologram, with no trimming and no
   gaps. Grid lines along the block boundaries keep every mark countable (a config switch turns
@@ -142,7 +142,7 @@ All notable changes to Jonastech Shape Projector.
 - **Build feedback on tall layers.** Filling a course above the bottom one of a tall Fixed-Y
   layer now turns that mark green right away, not only after something else changed.
 
-## 1.0.0 — 2026-09-02
+## 1.0.0 - 2026-09-02
 
 First release.
 
@@ -151,16 +151,16 @@ First release.
 - **Craft the Jonastech Shape Projector** and set it on the ground: four cupronickel or brass
   ingots, two cupronickel plates, two Jonas parts, a clear quartz and a temporal gear.
 - Right-click it to open its dial. The projector marks out figures in light. It builds nothing
-  itself — it only shows you where.
+  itself - it only shows you where.
 
 ### Figures
 
 - **Circle, ring, ellipse, rectangle, regular polygon, triangle and spiral.** Every figure is
   measured exactly, so nothing has to be counted by hand.
-- **Layers.** One projector holds up to forty-eight figures at once, all sharing a single centre.
-  Add, remove, duplicate and reorder them; each keeps its own size, colour, height and switch.
-- **A shared centre you can move**, in half-block steps, on a block or on the seam between blocks
-  — which is how you choose an odd or an even diameter. The centre may sit well away from the
+- **Layers.** One projector holds up to forty-eight figures at once, all sharing a single center.
+  Add, remove, duplicate and reorder them; each keeps its own size, color, height and switch.
+- **A shared center you can move**, in half-block steps, on a block or on the seam between blocks
+  - which is how you choose an odd or an even diameter. The center may sit well away from the
   projector itself, so the instrument can stand beside the work.
 - **Thickness.** A figure can be marked several blocks broad in one layer instead of several
   layers set one apart. The band grows inward, so the outer edge stays where the radius puts it.
@@ -169,7 +169,7 @@ First release.
 
 ### Standing on the land
 
-- **Fixed height** marks one dead-level line whatever the ground does — wall tops, floors,
+- **Fixed height** marks one dead-level line whatever the ground does - wall tops, floors,
   platforms. Where the earth swallows the line, dig down to it; where it hangs in air, build up.
 - **Follow terrain** lays the line on the surface like a rope, and follows the floor down as you
   excavate, so a dig line is never lost. Over a slope a tall layer keeps its height.
@@ -181,7 +181,7 @@ First release.
 - **Marks turn green as you fill them**, so the figure completes in front of you.
 - **A holographic miniature** floats above the projector showing the whole design at a glance, and
   can be switched off on its own without stopping the projection.
-- **Named presets** are saved per player and follow you to any projector — load them in place of
+- **Named presets** are saved per player and follow you to any projector - load them in place of
   what is there, or add them to it.
 - **Shortcuts** for the work you repeat: add a layer one block up (Page Up) to raise a tower a
   course at a time, add a layer one block out (Page Down) to fill toward a disc, and grow or
@@ -189,7 +189,7 @@ First release.
 - **Every control explains itself.** Hovering a button says exactly what it will do to the layer
   you have selected, with the arithmetic worked out.
 - **Hide every projection** for yourself alone with `O`. Other players still see theirs.
-- Carrying a configured projector — broken and replaced, or moved with Carry On — keeps its
+- Carrying a configured projector - broken and replaced, or moved with Carry On - keeps its
   layers.
 
 ### For server owners
