@@ -282,10 +282,17 @@ namespace ShapeProjector
                 return;
             }
 
+            // The mod's own world-pass program (projectorworld.{vsh,fsh}, 2026-09-17): the engine's
+            // Blockhighlights pair minus "gl_Position.w += 0.0004" (blockhighlights.vsh:25-27). That push
+            // is constant in clip space, so in world units it grows with distance (~0.0004*d/(2*zNear),
+            // zNear 0.025..0.1 from the FOV — ClientMain.cs:865) and past ~17 blocks it exceeded the 0.05
+            // inset: a mark whose cell held a real block won the depth test against that block's faces
+            // and showed through it (user: "I can still see the projection through the soil blocks").
+            // Fallback while the mod program is unavailable (compile failure, or before textures load):
             // IShaderProgram GetEngineShader(EnumShaderProgram program) — api-notes §d.2 (IRenderAPI.cs:480);
-            // EnumShaderProgram.Blockhighlights = 24 (EnumShaderProgram.cs:92). Returns the same
-            // instance the engine's SystemHighlightBlocks uses (RenderAPIBase.cs:379-382).
-            IShaderProgram prog = capi.Render.GetEngineShader(EnumShaderProgram.Blockhighlights);
+            // EnumShaderProgram.Blockhighlights = 24 (EnumShaderProgram.cs:92). Same vertex layout and
+            // uniform names on both programs, so nothing below changes with the choice.
+            IShaderProgram prog = modSystem.WorldShader ?? capi.Render.GetEngineShader(EnumShaderProgram.Blockhighlights);
 
             // ShaderProgramBase.Use() throws if a different shader is active (ShaderProgramBase.cs:265-268),
             // so stop/restore the current one — pattern from ModSystemSupportBeamPlacer.cs:344-347,357-360

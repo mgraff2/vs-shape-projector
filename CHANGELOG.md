@@ -2,6 +2,17 @@
 
 All notable changes to Jonastech Shape Projector.
 
+## 1.2.2 — 2026-09-17
+
+### Fixed
+
+- **Marks no longer show through the blocks you build on them.** Marks inside a placed block
+  became visible through it once you stood more than about 17 blocks away, whatever the block
+  was made of. The game's own selection-highlight shader, which the marks borrowed, nudges
+  everything a hair toward the camera, and that hair grows with distance until it beats the
+  small gap the marks keep inside their cell. The marks now draw with their own shader without
+  the nudge, so a filled cell hides its mark at every distance.
+
 ## 1.2.1 — 2026-09-08
 
 ### Fixed

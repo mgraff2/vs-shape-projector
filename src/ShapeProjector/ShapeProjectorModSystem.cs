@@ -31,6 +31,13 @@ namespace ShapeProjector
         /// </summary>
         public IShaderProgram? SeeThroughShader { get; private set; }
 
+        /// <summary>
+        /// The compiled world-pass program (projectorworld.{vsh,fsh}: engine Blockhighlights without its
+        /// distance-growing depth push), or null while unavailable — before BlockTexturesLoaded or after
+        /// a failed compile. ProjectorRenderer falls back to the engine program while this is null.
+        /// </summary>
+        public IShaderProgram? WorldShader { get; private set; }
+
         private ICoreClientAPI? capi;
 
         // Start(ICoreAPI) is "called on both server and client ... Typically also used ... to
@@ -103,16 +110,53 @@ namespace ShapeProjector
             // verified this session — api-notes "Renderer additions"). Re-created on every shader reload:
             // event ActionBoolReturn ReloadShader (IClientEventAPI.cs:126; §f.1 — ShaderRegistry.ReloadShaders
             // wipes mod programs, so the handler must rebuild ours). Vanilla precedent RiftRenderer.cs:45-57.
-            if (Config.seeThroughMode != "off")
-            {
-                api.Event.BlockTexturesLoaded += OnTexturesLoaded;
-                api.Event.ReloadShader += LoadSeeThroughShader;
-            }
+            // The world-pass program (2026-09-17) is loaded on the same two events; it is always wanted,
+            // so the hooks are unconditional and the see-through gate moved inside LoadShaders.
+            api.Event.BlockTexturesLoaded += OnTexturesLoaded;
+            api.Event.ReloadShader += LoadShaders;
         }
 
         private void OnTexturesLoaded()
         {
-            LoadSeeThroughShader();
+            LoadShaders();
+        }
+
+        /// <summary>ReloadShader / BlockTexturesLoaded handler: (re)builds every mod program.</summary>
+        public bool LoadShaders()
+        {
+            bool ok = LoadWorldShader();
+            if (Config.seeThroughMode != "off") ok &= LoadSeeThroughShader();
+            return ok;
+        }
+
+        /// <summary>
+        /// (Re)creates, registers and compiles the world-pass program (assets/shapeprojector/shaders/
+        /// projectorworld.{vsh,fsh}): the engine's Blockhighlights pair minus its clip-space "pretend
+        /// closer" push, which grew with distance and let marks inside placed blocks show through them
+        /// past ~17 blocks (user report 2026-09-17; the arithmetic is in projectorworld.vsh). Same
+        /// recipe as LoadSeeThroughShader. A failed compile logs one warning and leaves WorldShader
+        /// null; ProjectorRenderer then falls back to the engine program, so the marks still draw.
+        /// </summary>
+        public bool LoadWorldShader()
+        {
+            if (capi == null) return true;
+            WorldShader = null;
+
+            IShaderProgram prog = capi.Shader.NewShaderProgram();
+            prog.VertexShader = capi.Shader.NewShader(EnumShaderType.VertexShader);
+            prog.FragmentShader = capi.Shader.NewShader(EnumShaderType.FragmentShader);
+            prog.AssetDomain = "shapeprojector";
+            capi.Shader.RegisterFileShaderProgram("projectorworld", prog);
+            bool ok = prog.Compile();
+            if (ok)
+            {
+                WorldShader = prog;
+            }
+            else
+            {
+                capi.Logger.Warning("[shapeprojector] projectorworld shader failed to compile — marks use the engine highlight shader this session and may show through blocks at a distance.");
+            }
+            return ok;
         }
 
         private bool OnToggleHide(KeyCombination comb)
